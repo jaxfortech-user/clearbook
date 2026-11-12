@@ -5,6 +5,7 @@ import { useRouter, useParams } from "next/navigation";
 import { Topbar } from "@/components/layout/topbar";
 import { AlertCircle, ArrowLeft, CheckCircle, Loader2, Send, Plus, Trash2, Save } from "lucide-react";
 import { approveVoucher, getLedgers, type Ledger } from "@/lib/api";
+const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 function authH(): Record<string, string> {
   const t = typeof window !== "undefined" ? localStorage.getItem("clearbook_token") : null;
@@ -70,11 +71,11 @@ function VoucherDetailPage() {
     if (!id) return;
     setLoading(true);
     Promise.all([
-      fetch(`http://localhost:8000/api/v1/vouchers/${id}`, { headers: authH() }).then(r => {
+      fetch(`${API}/api/v1/vouchers/${id}`, { headers: authH() }).then(r => {
         if (!r.ok) throw new Error(`Error ${r.status}`);
         return r.json();
       }),
-      fetch(`http://localhost:8000/api/v1/clients/`, { headers: authH() }).then(r => r.json()).catch(() => []),
+      fetch(`${API}/api/v1/clients/`, { headers: authH() }).then(r => r.json()).catch(() => []),
       getLedgers().catch(() => []),
     ])
       .then(([voucherData, clientsData, ledgersData]) => {
@@ -121,7 +122,7 @@ function VoucherDetailPage() {
     setApproving(true);
     setApproveError("");
     try {
-      const res = await fetch(`http://localhost:8000/api/v1/vouchers/${voucher.id}/submit`, { method: "POST", headers: authH() });
+      const res = await fetch(`${API}/api/v1/vouchers/${voucher.id}/submit`, { method: "POST", headers: authH() });
       if (res.ok) {
         const updated = await res.json();
         setVoucher((prev: any) => ({ ...prev, ...(updated?.id ? updated : {}), status: "pending_approval" }));
@@ -157,7 +158,7 @@ function VoucherDetailPage() {
 
     setSavingEntries(true);
     try {
-      const res = await fetch(`http://localhost:8000/api/v1/vouchers/${voucher.id}/update-entries`, {
+      const res = await fetch(`${API}/api/v1/vouchers/${voucher.id}/update-entries`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...authH() },
         body: JSON.stringify({ entries: valid }),
@@ -203,7 +204,7 @@ function VoucherDetailPage() {
         tally_edu_mode: "true",
       });
       const res = await fetch(
-        `http://localhost:8000/api/v1/vouchers/${voucher.id}/post-to-tally?${qp}`,
+        `${API}/api/v1/vouchers/${voucher.id}/post-to-tally?${qp}`,
         { method: "POST" }
       );
       if (res.ok) {
