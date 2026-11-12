@@ -85,7 +85,7 @@ export default function DashboardPage() {
             }}
             onMouseEnter={(e) => (e.currentTarget.style.background = "#4254d4")}
             onMouseLeave={(e) => (e.currentTarget.style.background = "#5266eb")}
-            onClick={() => router.push("/clients/new")}
+            onClick={() => router.push("/clients?new=true")}
           >
             + New Client
           </button>
