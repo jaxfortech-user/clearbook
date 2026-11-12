@@ -282,6 +282,7 @@ function DocumentDetailPage() {
               <Button size="sm" variant="outline" onClick={() => setShowClientPicker(true)} style={{ display: "flex", gap: "5px", alignItems: "center" }}>
                 <FilePlus size={12} /> Assign Client
               </Button>
+            )}
             {canCreateVoucher && (
               <Button
                 size="sm"
