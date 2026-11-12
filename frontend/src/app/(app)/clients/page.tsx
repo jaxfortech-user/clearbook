@@ -1,8 +1,6 @@
 "use client";
-export const instant = false;
 
 import { useState, useEffect } from "react";
-import { useSearchParams } from "next/navigation";
 import { useRouter } from "next/navigation";
 import { Topbar } from "@/components/layout/topbar";
 import { Search, X, Loader2, AlertCircle, Users } from "lucide-react";
@@ -44,8 +42,6 @@ const inputStyle = {
 
 export default function ClientsPage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  useEffect(() => { if (searchParams.get("new") === "true") setShowModal(true); }, [searchParams]);
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
