@@ -1,6 +1,6 @@
 import { authHeaders, clearToken } from "./auth";
 
-const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
+const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
@@ -199,6 +199,10 @@ export async function uploadDocument(file: File, clientId?: string): Promise<Doc
     throw new Error(err.detail ?? "Upload failed");
   }
   return res.json();
+}
+
+export async function assignDocumentClient(docId: string, clientId: string | null): Promise<void> {
+  await api.patch(`/api/v1/documents/${docId}/assign-client`, { client_id: clientId });
 }
 
 // ── Vouchers ──────────────────────────────────────────────────────────────────
