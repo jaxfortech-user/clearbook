@@ -1,0 +1,43 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: clearbook-db
+    environment:
+      POSTGRES_DB: clearbook
+      POSTGRES_USER: clearbook_user
+      POSTGRES_PASSWORD: clearbook_dev_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U clearbook_user -d clearbook"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: clearbook-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+  minio:
+    image: minio/minio:latest
+    container_name: clearbook-storage
+    environment:
+      MINIO_ROOT_USER: clearbook_access_key
+      MINIO_ROOT_PASSWORD: clearbook_secret_key
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+
+volumes:
+  postgres_data:
+  redis_data:
+  minio_data:
