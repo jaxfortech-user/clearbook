@@ -18,7 +18,10 @@ class Settings(BaseSettings):
     SQS_QUEUE_URL: str
 
     OPENAI_API_KEY: str = ""
-    ALLOWED_ORIGINS: List[str] = ["http://localhost:3000"]
+    ALLOWED_ORIGINS: List[str] = [
+        "http://localhost:3000",
+        "https://clearbook-inky.vercel.app",
+    ]
 
     class Config:
         env_file = ".env"
