@@ -54,7 +54,7 @@ function TallySettingsInner() {
   }
   function authHeader() {
     const t = getToken();
-    return t ? { Authorization: `Bearer ${t}` } : {};
+    return t ? { Authorization: `Bearer ${t}` } as HeadersInit : undefined;
   }
 
   // Load settings from API (or fall back to localStorage if no clientId)
