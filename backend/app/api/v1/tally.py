@@ -10,6 +10,7 @@ from typing import Optional
 from app.core.database import get_db
 from app.core.tally_routing import route_tally_xml
 from app.models.client import Client
+from app.models.tenant import Tenant
 
 router = APIRouter()
 
@@ -36,6 +37,9 @@ async def get_tally_settings(client_id: str, db: AsyncSession = Depends(get_db))
     client = result.scalar_one_or_none()
     if not client:
         raise HTTPException(status_code=404, detail="Client not found")
+    # Fetch the tenant's connector_api_key
+    t_result = await db.execute(select(Tenant).where(Tenant.id == client.tenant_id))
+    tenant = t_result.scalar_one_or_none()
     return {
         "client_id": client.id,
         "tally_host": client.tally_host or "localhost",
@@ -43,6 +47,7 @@ async def get_tally_settings(client_id: str, db: AsyncSession = Depends(get_db))
         "tally_company": client.tally_company or "",
         "tally_edu_mode": client.tally_edu_mode or False,
         "tally_connector_status": client.tally_connector_status or "not_installed",
+        "connector_api_key": tenant.connector_api_key if tenant else "",
     }
 
 

@@ -3,7 +3,7 @@
 import { useEffect, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { Topbar } from "@/components/layout/topbar";
-import { AlertCircle, CheckCircle, Loader2, Plug } from "lucide-react";
+import { AlertCircle, CheckCircle, Loader2, Plug, Copy, Check, Download } from "lucide-react";
 
 const API = "https://clearbook-app.duckdns.org";
 
@@ -26,7 +26,45 @@ function Field({ label, hint, required, children }: { label: string; hint?: stri
   );
 }
 
-// Connector status dot colours
+function CopyField({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+  const [copied, setCopied] = useState(false);
+  function handleCopy() {
+    navigator.clipboard.writeText(value).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
+      <label style={{ fontSize: "12px", fontWeight: 600, color: "#525252", letterSpacing: "0.01em" }}>{label}</label>
+      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+        <div style={{
+          flex: 1, height: "36px", padding: "0 11px", borderRadius: "7px",
+          border: "1px solid #e0e0e0", fontSize: "12.5px", color: "#0a0a0a",
+          background: "#f5f5f5", fontFamily: mono ? "monospace" : "var(--font-family-sans)",
+          display: "flex", alignItems: "center", overflow: "hidden",
+          whiteSpace: "nowrap" as const, textOverflow: "ellipsis",
+        }}>
+          {value || <span style={{ color: "#a3a3a3" }}>—</span>}
+        </div>
+        <button
+          onClick={handleCopy}
+          disabled={!value}
+          title="Copy to clipboard"
+          style={{
+            flexShrink: 0, width: "36px", height: "36px", display: "flex", alignItems: "center",
+            justifyContent: "center", borderRadius: "7px", border: "1px solid #e0e0e0",
+            background: copied ? "#d1fae5" : "#ffffff", cursor: value ? "pointer" : "not-allowed",
+            color: copied ? "#059669" : "#737373", transition: "all 0.15s",
+          }}
+        >
+          {copied ? <Check size={14} /> : <Copy size={14} />}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 const STATUS_STYLE: Record<string, { color: string; label: string }> = {
   online:        { color: "#059669", label: "Connector online" },
   offline:       { color: "#f59e0b", label: "Connector offline" },
@@ -43,6 +81,7 @@ function TallySettingsInner() {
   const [port, setPort] = useState("9000");
   const [company, setCompany] = useState("");
   const [connectorStatus, setConnectorStatus] = useState("not_installed");
+  const [connectorApiKey, setConnectorApiKey] = useState("");
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -57,7 +96,6 @@ function TallySettingsInner() {
     return t ? { Authorization: `Bearer ${t}` } as HeadersInit : undefined;
   }
 
-  // Load settings from API (or fall back to localStorage if no clientId)
   useEffect(() => {
     async function load() {
       if (clientId) {
@@ -68,15 +106,15 @@ function TallySettingsInner() {
           });
           if (res.ok) {
             const cfg = await res.json();
-            if (cfg.tally_host)    setHost(cfg.tally_host);
-            if (cfg.tally_port)    setPort(String(cfg.tally_port));
-            if (cfg.tally_company) setCompany(cfg.tally_company);
+            if (cfg.tally_host)             setHost(cfg.tally_host);
+            if (cfg.tally_port)             setPort(String(cfg.tally_port));
+            if (cfg.tally_company)          setCompany(cfg.tally_company);
             if (cfg.tally_connector_status) setConnectorStatus(cfg.tally_connector_status);
+            if (cfg.connector_api_key)      setConnectorApiKey(cfg.connector_api_key);
           }
         } catch {}
         setLoading(false);
       } else {
-        // No clientId in URL — fall back to localStorage (backward compat)
         try {
           const stored = localStorage.getItem("clearbook_tally_config");
           if (stored) {
@@ -108,7 +146,6 @@ function TallySettingsInner() {
         });
       } catch {}
     } else {
-      // Fall back to localStorage
       try {
         localStorage.setItem("clearbook_tally_config", JSON.stringify({
           host:    host.trim() || "localhost",
@@ -131,7 +168,6 @@ function TallySettingsInner() {
     setTesting(true);
     setTestResult(null);
     try {
-      // Use the new per-client test endpoint when clientId is available
       const url = clientId
         ? `${API}/api/v1/tally/test/${clientId}`
         : `${API}/api/v1/tally/test-connection`;
@@ -196,20 +232,50 @@ function TallySettingsInner() {
           </div>
         </div>
 
+        {/* Connector Credentials card */}
+        {clientId && (
+          <div style={{ background: "#ffffff", border: "1px solid #ebebeb", borderRadius: "12px", boxShadow: "0 1px 3px rgba(0,0,0,0.06)", overflow: "hidden" }}>
+            <div style={{ padding: "14px 20px", borderBottom: "1px solid #ebebeb", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <span style={{ fontSize: "13px", fontWeight: 600, color: "#0a0a0a" }}>Connector Credentials</span>
+              <a
+                href="https://github.com/YOUR_ORG/clearbook/releases/latest/download/ClearbookConnector.exe"
+                download
+                style={{ display: "flex", alignItems: "center", gap: "5px", fontSize: "12px", color: "#5266eb", fontWeight: 500, textDecoration: "none" }}
+                onMouseEnter={e => (e.currentTarget.style.textDecoration = "underline")}
+                onMouseLeave={e => (e.currentTarget.style.textDecoration = "none")}
+              >
+                <Download size={12} /> Download Connector
+              </a>
+            </div>
+            <div style={{ padding: "16px 24px 20px", display: "flex", flexDirection: "column", gap: "14px" }}>
+              <p style={{ fontSize: "12px", color: "#737373", margin: 0, lineHeight: "1.5" }}>
+                Enter these when you run <strong>ClearbookConnector.exe</strong> for the first time on the Tally machine.
+              </p>
+              {loading ? (
+                <div style={{ display: "flex", alignItems: "center", gap: "8px", color: "#a3a3a3", fontSize: "12.5px" }}>
+                  <Loader2 size={13} style={{ animation: "spin 1s linear infinite" }} /> Loading…
+                </div>
+              ) : (
+                <>
+                  <CopyField label="Client ID" value={clientId} mono />
+                  <CopyField label="API Key" value={connectorApiKey} mono />
+                </>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Config form */}
         <div style={{ background: "#ffffff", border: "1px solid #ebebeb", borderRadius: "12px", boxShadow: "0 1px 3px rgba(0,0,0,0.06)", overflow: "hidden" }}>
           <div style={{ padding: "14px 20px", borderBottom: "1px solid #ebebeb" }}>
             <span style={{ fontSize: "13px", fontWeight: 600, color: "#0a0a0a" }}>Connection Settings</span>
           </div>
-
           <div style={{ padding: "20px 24px", display: "flex", flexDirection: "column", gap: "16px" }}>
-
             {loading && (
               <div style={{ display: "flex", alignItems: "center", gap: "8px", color: "#a3a3a3", fontSize: "12.5px" }}>
                 <Loader2 size={13} style={{ animation: "spin 1s linear infinite" }} /> Loading settings…
               </div>
             )}
-
             <Field label="Tally Company Name" required hint="Must match the company name exactly as it appears in Tally">
               <input
                 value={mounted ? company : ""}
@@ -225,7 +291,6 @@ function TallySettingsInner() {
                 </p>
               )}
             </Field>
-
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
               <Field label="Tally Host" hint="IP or hostname where Tally is running">
                 <input
@@ -249,8 +314,6 @@ function TallySettingsInner() {
                 />
               </Field>
             </div>
-
-            {/* Test result */}
             {testResult && (
               <div style={{ display: "flex", alignItems: "flex-start", gap: "10px", padding: "12px 14px", background: testResult.ok ? "#d1fae5" : "#fef2f2", border: `1px solid ${testResult.ok ? "#6ee7b7" : "#fca5a5"}`, borderRadius: "8px" }}>
                 {testResult.ok
@@ -260,12 +323,8 @@ function TallySettingsInner() {
                 <span style={{ fontSize: "12.5px", color: testResult.ok ? "#059669" : "#dc2626" }}>{testResult.message}</span>
               </div>
             )}
-
           </div>
-
-          {/* Footer actions */}
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 24px", borderTop: "1px solid #ebebeb" }}>
-
             <button
               onClick={handleTest}
               disabled={testing}
@@ -276,7 +335,6 @@ function TallySettingsInner() {
               {testing && <Loader2 size={12} style={{ animation: "spin 1s linear infinite" }} />}
               {testing ? "Testing…" : "Test Connection"}
             </button>
-
             <button
               onClick={handleSave}
               disabled={!company.trim() || saving}
@@ -288,7 +346,6 @@ function TallySettingsInner() {
               {saved && <CheckCircle size={12} />}
               {saving ? "Saving…" : saved ? "Saved!" : "Save Settings"}
             </button>
-
           </div>
         </div>
 
