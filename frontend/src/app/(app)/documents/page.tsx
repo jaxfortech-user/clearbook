@@ -71,6 +71,20 @@ export default function DocumentsPage() {
   }, []);
 
   useEffect(() => {
+    const hasPending = allDocuments.some(
+      d => d.status === "uploaded" || d.status === "processing"
+    );
+    if (!hasPending) return;
+    const timer = setInterval(() => {
+      getDocuments().then(docs => {
+        setAllDocuments(docs);
+        setDocuments(selectedClientId ? docs.filter(d => d.client_id === selectedClientId) : docs);
+      }).catch(() => {});
+    }, 3000);
+    return () => clearInterval(timer);
+  }, [allDocuments, selectedClientId]);
+
+  useEffect(() => {
     if (!selectedClientId) {
       setDocuments(allDocuments);
     } else {
