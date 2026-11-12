@@ -436,3 +436,20 @@ def _doc_to_dict(doc: Document) -> dict:
         "created_at": doc.created_at.isoformat() if doc.created_at else None,
         "updated_at": doc.updated_at.isoformat() if doc.updated_at else None,
     }
+
+@router.patch("/{doc_id}/assign-client")
+async def assign_client(
+    doc_id: str,
+    payload: dict,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Assign or reassign a client to a document."""
+    result = await db.execute(select(Document).filter(Document.id == doc_id))
+    doc = result.scalar_one_or_none()
+    if not doc:
+        raise HTTPException(404, "Document not found")
+    doc.client_id = payload.get("client_id")
+    doc.updated_at = datetime.utcnow()
+    await db.commit()
+    return {"id": doc.id, "client_id": doc.client_id, "message": "Client assigned"}
