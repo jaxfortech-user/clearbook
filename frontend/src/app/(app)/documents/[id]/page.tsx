@@ -173,6 +173,32 @@ function DocumentDetailPage() {
   const [creating, setCreating] = useState(false);
   const [voucher, setVoucher] = useState<VoucherCreated | null>(null);
   const [createError, setCreateError] = useState<string | null>(null);
+  const [clients, setClients] = useState<{ id: string; name: string }[]>([]);
+  const [assigningClient, setAssigningClient] = useState(false);
+  const [showClientPicker, setShowClientPicker] = useState(false);
+
+  useEffect(() => {
+    fetchJson<{ id: string; name: string }[]>(`${API}/api/v1/clients/`)
+      .then(setClients).catch(() => {});
+  }, []);
+
+  const handleAssignClient = async (clientId: string) => {
+    if (!doc) return;
+    setAssigningClient(true);
+    try {
+      await fetchJson(`${API}/api/v1/documents/${doc.id}/assign-client`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ client_id: clientId }),
+      });
+      setDoc({ ...doc, client_id: clientId });
+      setShowClientPicker(false);
+    } catch (e: unknown) {
+      alert("Failed to assign client: " + (e instanceof Error ? e.message : String(e)));
+    } finally {
+      setAssigningClient(false);
+    }
+  };
 
   useEffect(() => {
     if (!id) return;
@@ -208,7 +234,8 @@ function DocumentDetailPage() {
   const extracted = doc?.extracted_data;
   const transactions = extracted?.transactions ?? extracted?.line_items ?? [];
 
-  const canCreateVoucher = doc && !["voucher_created", "approved"].includes(doc.status) && ["extracted", "needs_review", "verified"].includes(doc.status);
+  const canCreateVoucher = doc && doc.client_id && !["voucher_created", "approved"].includes(doc.status) && ["extracted", "needs_review", "verified"].includes(doc.status);
+  const noClientWarning = doc && !doc.client_id && ["extracted", "needs_review", "verified"].includes(doc.status);
 
   // ── render ─────────────────────────────────────────────────────────────────
 
@@ -251,6 +278,10 @@ function DocumentDetailPage() {
                 <Eye size={12} /> Preview
               </Button>
             )}
+            {noClientWarning && (
+              <Button size="sm" variant="outline" onClick={() => setShowClientPicker(true)} style={{ display: "flex", gap: "5px", alignItems: "center" }}>
+                <FilePlus size={12} /> Assign Client
+              </Button>
             {canCreateVoucher && (
               <Button
                 size="sm"
@@ -403,6 +434,22 @@ function DocumentDetailPage() {
       </div>
 
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      {showClientPicker && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.3)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }}>
+          <div style={{ background: "#fff", borderRadius: "12px", padding: "24px", minWidth: "320px", boxShadow: "0 8px 32px rgba(0,0,0,0.12)" }}>
+            <h3 style={{ margin: "0 0 16px", fontSize: "14px", fontWeight: 600 }}>Assign Client to Document</h3>
+            {clients.length === 0 && <p style={{ fontSize: "13px", color: "#a3a3a3" }}>No clients found.</p>}
+            {clients.map(c => (
+              <button key={c.id} onClick={() => handleAssignClient(c.id)}
+                disabled={assigningClient}
+                style={{ display: "block", width: "100%", textAlign: "left", padding: "10px 12px", borderRadius: "8px", border: "1px solid #ebebeb", marginBottom: "8px", cursor: "pointer", fontSize: "13px", background: "#fafafa" }}>
+                {c.name}
+              </button>
+            ))}
+            <button onClick={() => setShowClientPicker(false)} style={{ marginTop: "8px", padding: "8px 16px", borderRadius: "8px", border: "1px solid #ebebeb", cursor: "pointer", fontSize: "13px" }}>Cancel</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
