@@ -39,13 +39,13 @@ def load_config() -> dict:
 
     if not config_path.exists():
         # First run — write a template so the CA firm knows what to fill in
-        with open(config_path, "w", encoding="utf-8") as f:
+        with open(config_path, "w", encoding="utf-8-sig") as f:
             json.dump(TEMPLATE, f, indent=2)
         print(f"[Clearbook] config.json created at: {config_path}")
         print("[Clearbook] Please fill in your client_id and api_key, then restart.")
         sys.exit(0)
 
-    with open(config_path, "r", encoding="utf-8") as f:
+    with open(config_path, "r", encoding="utf-8-sig") as f:
         config = json.load(f)
 
     # Validate required keys
