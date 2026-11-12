@@ -1,6 +1,6 @@
 import { authHeaders, clearToken } from "./auth";
 
-const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+const BASE = "https://clearbook-app.duckdns.org";
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {

@@ -75,7 +75,7 @@ interface VoucherCreated {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+const API = "https://clearbook-app.duckdns.org";
 
 async function fetchJson<T>(url: string, opts?: RequestInit): Promise<T> {
   const token = typeof window !== "undefined" ? localStorage.getItem("clearbook_token") : null;

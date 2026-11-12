@@ -5,7 +5,7 @@ import { useRouter, useParams } from "next/navigation";
 import { Topbar } from "@/components/layout/topbar";
 import { AlertCircle, ArrowLeft, CheckCircle, Loader2, Send, Plus, Trash2, Save } from "lucide-react";
 import { approveVoucher, getLedgers, type Ledger } from "@/lib/api";
-const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+const API = "https://clearbook-app.duckdns.org";
 
 function authH(): Record<string, string> {
   const t = typeof window !== "undefined" ? localStorage.getItem("clearbook_token") : null;

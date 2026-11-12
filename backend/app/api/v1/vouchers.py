@@ -471,3 +471,23 @@ def _voucher_to_dict(v: Voucher) -> dict:
         "created_at": v.created_at.isoformat() if v.created_at else None,
         "updated_at": v.updated_at.isoformat() if v.updated_at else None,
     }
+
+
+@router.post("/{voucher_id}/submit")
+async def submit_voucher(
+    voucher_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Submit a draft voucher for approval."""
+    result = await db.execute(select(Voucher).filter(Voucher.id == voucher_id))
+    voucher = result.scalar_one_or_none()
+    if not voucher:
+        raise HTTPException(404, "Voucher not found")
+    if voucher.status != "draft":
+        raise HTTPException(400, f"Cannot submit voucher with status '{voucher.status}'")
+    voucher.status = "pending_approval"
+    voucher.updated_at = datetime.utcnow()
+    await db.commit()
+    await db.refresh(voucher)
+    return {"id": voucher.id, "status": voucher.status}
