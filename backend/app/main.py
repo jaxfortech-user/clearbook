@@ -20,6 +20,7 @@ app = FastAPI(
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
     debug=settings.DEBUG,
+    redirect_slashes=False,
     lifespan=lifespan,
     # Disable docs in production
     docs_url=None if not settings.DEBUG else "/docs",
