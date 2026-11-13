@@ -60,3 +60,14 @@ jobs:
           name: ClearbookConnector-${{ github.sha }}
           path: tally_connector/dist/ClearbookConnector.exe
           retention-days: 30
+
+      - name: Publish release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release delete connector-latest --yes 2>/dev/null || true
+          gh release create connector-latest dist/ClearbookConnector.exe \
+            --title "ClearbookConnector Latest" \
+            --notes "Latest build — run on the Tally machine to connect Clearbook." \
+            --latest
