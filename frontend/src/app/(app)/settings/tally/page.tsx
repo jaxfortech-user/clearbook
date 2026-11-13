@@ -5,7 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { Topbar } from "@/components/layout/topbar";
 import { AlertCircle, CheckCircle, Loader2, Plug, Copy, Check, Download } from "lucide-react";
 
-const API = "https://clearbook-app.duckdns.org";
+const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 const inputStyle = {
   height: "36px", padding: "0 11px", borderRadius: "7px",
