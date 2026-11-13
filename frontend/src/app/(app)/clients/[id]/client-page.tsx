@@ -490,6 +490,41 @@ function ClientDetailInner() {
               )}
             </div>
 
+            {/* Connector Credentials */}
+            <div style={{ background: "#ffffff", border: "1px solid #ebebeb", borderRadius: "12px", overflow: "hidden" }}>
+              <div style={{ padding: "12px 20px", borderBottom: "1px solid #ebebeb", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <span style={{ fontSize: "13px", fontWeight: 600, color: "#0a0a0a" }}>Connector Credentials</span>
+                <a href={`/settings/tally?clientId=${id}`}
+                  style={{ fontSize: "12px", color: "#5266eb", fontWeight: 500, textDecoration: "none" }}
+                  onMouseEnter={e => (e.currentTarget.style.textDecoration = "underline")}
+                  onMouseLeave={e => (e.currentTarget.style.textDecoration = "none")}
+                >
+                  Manage →
+                </a>
+              </div>
+              <div style={{ padding: "14px 20px", display: "flex", flexDirection: "column", gap: "10px" }}>
+                <p style={{ fontSize: "12px", color: "#737373", margin: 0 }}>
+                  Use these credentials when running <strong>ClearbookConnector.exe</strong> on the Tally machine.
+                </p>
+                <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                  <label style={{ fontSize: "11.5px", fontWeight: 600, color: "#525252" }}>Client ID</label>
+                  <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                    <div style={{ flex: 1, height: "32px", padding: "0 10px", borderRadius: "7px", border: "1px solid #e0e0e0", fontSize: "12px", background: "#f5f5f5", fontFamily: "monospace", display: "flex", alignItems: "center", overflow: "hidden", whiteSpace: "nowrap" as const }}>
+                      {id}
+                    </div>
+                    <button onClick={() => navigator.clipboard.writeText(id)}
+                      style={{ flexShrink: 0, width: "32px", height: "32px", borderRadius: "7px", border: "1px solid #e0e0e0", background: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: "#737373" }}
+                      title="Copy Client ID">
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                    </button>
+                  </div>
+                </div>
+                <p style={{ fontSize: "11.5px", color: "#a3a3a3", margin: 0 }}>
+                  Click <strong>Manage →</strong> above to generate or view the API Key.
+                </p>
+              </div>
+            </div>
+
             {/* Config form */}
             <div style={{ background: "#ffffff", border: "1px solid #ebebeb", borderRadius: "12px", overflow: "hidden" }}>
               <div style={{ padding: "12px 20px", borderBottom: "1px solid #ebebeb" }}>
