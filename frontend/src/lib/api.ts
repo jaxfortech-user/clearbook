@@ -691,4 +691,4 @@ export function getConnectorKey() {
 
 export function regenerateConnectorKey() {
   return api.post<ConnectorKeyResponse>("/api/v1/connector/key/regenerate", {});
-}
+}// rebuild Fri Nov 13 00:17:13 UTC 2026
