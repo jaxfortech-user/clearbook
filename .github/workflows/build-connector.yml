@@ -1,0 +1,62 @@
+name: Build ClearbookConnector.exe
+
+on:
+  push:
+    paths:
+      - 'tally_connector/**'
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build-windows-exe:
+    runs-on: windows-latest
+
+    defaults:
+      run:
+        working-directory: tally_connector
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Configure pywin32 post-install
+        run: |
+          python -c "
+          import site, os, subprocess, sys
+          sp = site.getsitepackages()
+          for p in sp:
+              script = os.path.join(p, 'pywin32_postinstall.py')
+              if os.path.exists(script):
+                  subprocess.run([sys.executable, script, '-install'], check=False)
+                  break
+          "
+        continue-on-error: true
+
+      - name: Build exe with PyInstaller
+        run: pyinstaller ClearbookConnector.spec --clean --noconfirm
+
+      - name: Verify exe was created
+        run: |
+          if (!(Test-Path "dist\ClearbookConnector.exe")) {
+            Write-Error "ClearbookConnector.exe not found in dist\"
+            exit 1
+          }
+          $size = (Get-Item "dist\ClearbookConnector.exe").length / 1MB
+          Write-Output "ClearbookConnector.exe built successfully ($([math]::Round($size,1)) MB)"
+
+      - name: Upload exe as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ClearbookConnector-${{ github.sha }}
+          path: tally_connector/dist/ClearbookConnector.exe
+          retention-days: 30
