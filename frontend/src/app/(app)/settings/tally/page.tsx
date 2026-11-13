@@ -254,7 +254,7 @@ function TallySettingsInner() {
             <div style={{ padding: "14px 20px", borderBottom: "1px solid #ebebeb", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <span style={{ fontSize: "13px", fontWeight: 600, color: "#0a0a0a" }}>Connector Credentials</span>
               <a
-                href="https://github.com/jaxfortech-user/clearbook/releases/latest/download/ClearbookConnector.exe"
+                href="https://github.com/jaxfortech-user/clearbook/releases/download/connector-latest/ClearbookConnector.exe"
                 download
                 style={{ display: "flex", alignItems: "center", gap: "5px", fontSize: "12px", color: "#5266eb", fontWeight: 500, textDecoration: "none" }}
                 onMouseEnter={e => (e.currentTarget.style.textDecoration = "underline")}
