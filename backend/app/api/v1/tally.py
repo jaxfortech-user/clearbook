@@ -312,3 +312,5 @@ def _ensure_ledgers_exist_async_wrapper(company, client, entries, voucher_type):
         except Exception as e:
             raise RuntimeError(f"Error creating ledger '{ledger_name}': {str(e)}")
     return created
+# Alias for backward compatibility
+_ensure_ledgers_exist = _ensure_ledgers_exist_async_wrapper

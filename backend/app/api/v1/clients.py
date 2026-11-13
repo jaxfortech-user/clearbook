@@ -148,15 +148,13 @@ async def test_tally_connection(client_id: str, db: AsyncSession = Depends(get_d
     if not client.tally_company:
         raise HTTPException(status_code=400, detail="No Tally company mapped for this client")
 
-    from app.api.v1.tally import _post_tally_xml
+    from app.api.v1.tally import route_tally_xml
     import xml.etree.ElementTree as ET
     xml = """<ENVELOPE><HEADER><TALLYREQUEST>Export Data</TALLYREQUEST></HEADER>
 <BODY><EXPORTDATA><REQUESTDESC><REPORTNAME>List of Companies</REPORTNAME>
 </REQUESTDESC></EXPORTDATA></BODY></ENVELOPE>"""
     try:
-        host = client.tally_host or "localhost"
-        port = client.tally_port or 9000
-        response = _post_tally_xml(host, port, xml)
+        response = await route_tally_xml(client, xml)
         root = ET.fromstring(response)
         companies = [c.text for c in root.iter("BASICCOMPANYNAME") if c.text]
         return {"connected": True, "company_list": companies}
