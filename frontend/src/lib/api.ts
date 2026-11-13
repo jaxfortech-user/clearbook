@@ -109,7 +109,7 @@ export function getClientById(id: string) {
 }
 
 export function createClient(payload: CreateClientPayload) {
-  return api.post<Client>("/api/v1/clients", payload);
+  return api.post<Client>("/api/v1/clients/", payload);
 }
 
 export function updateClient(id: string, payload: Partial<CreateClientPayload>) {
