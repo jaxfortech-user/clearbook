@@ -83,6 +83,7 @@ function TallySettingsInner() {
   const [connectorStatus, setConnectorStatus] = useState("not_installed");
   const [connectorApiKey, setConnectorApiKey] = useState("");
   const [saved, setSaved] = useState(false);
+  const [generatingKey, setGeneratingKey] = useState(false);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
@@ -157,6 +158,21 @@ function TallySettingsInner() {
     setSaving(false);
     setSaved(true);
     setTimeout(() => setSaved(false), 3000);
+  }
+
+  async function handleGenerateKey() {
+    setGeneratingKey(true);
+    try {
+      const res = await fetch(`${API}/api/v1/connector/generate-key`, {
+        method: "POST",
+        headers: { ...authHeader() },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setConnectorApiKey(data.api_key);
+      }
+    } catch {}
+    setGeneratingKey(false);
   }
 
   async function handleTest() {
@@ -238,7 +254,7 @@ function TallySettingsInner() {
             <div style={{ padding: "14px 20px", borderBottom: "1px solid #ebebeb", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <span style={{ fontSize: "13px", fontWeight: 600, color: "#0a0a0a" }}>Connector Credentials</span>
               <a
-                href="https://github.com/YOUR_ORG/clearbook/releases/latest/download/ClearbookConnector.exe"
+                href="https://github.com/jaxfortech-user/clearbook/releases/latest/download/ClearbookConnector.exe"
                 download
                 style={{ display: "flex", alignItems: "center", gap: "5px", fontSize: "12px", color: "#5266eb", fontWeight: 500, textDecoration: "none" }}
                 onMouseEnter={e => (e.currentTarget.style.textDecoration = "underline")}
@@ -258,7 +274,18 @@ function TallySettingsInner() {
               ) : (
                 <>
                   <CopyField label="Client ID" value={clientId} mono />
-                  <CopyField label="API Key" value={connectorApiKey} mono />
+                  <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
+                <label style={{ fontSize: "12px", fontWeight: 600, color: "#525252" }}>API Key</label>
+                <div style={{ display: "flex", gap: "8px" }}>
+                  <div style={{ flex: 1, height: "36px", padding: "0 11px", borderRadius: "7px", border: "1px solid #e0e0e0", fontSize: "12.5px", background: "#f5f5f5", fontFamily: "monospace", display: "flex", alignItems: "center", overflow: "hidden", whiteSpace: "nowrap" as const }}>
+                    {connectorApiKey || <span style={{ color: "#a3a3a3" }}>Not generated yet</span>}
+                  </div>
+                  <button onClick={handleGenerateKey} disabled={generatingKey}
+                    style={{ height: "36px", padding: "0 14px", borderRadius: "7px", border: "1px solid #e0e0e0", background: "#fff", cursor: "pointer", fontSize: "12px", color: "#5266eb", fontWeight: 600 }}>
+                    {generatingKey ? "…" : connectorApiKey ? "Regenerate" : "Generate"}
+                  </button>
+                </div>
+              </div>
                 </>
               )}
             </div>
