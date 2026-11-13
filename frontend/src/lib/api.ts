@@ -329,11 +329,11 @@ export interface AuditLogEntry {
 }
 
 export function getReviewQueue() {
-  return api.get<ReviewQueueItem[]>("/api/v1/review-queue");
+  return api.get<ReviewQueueItem[]>("/api/v1/review-queue/");
 }
 
 export function getAuditLog() {
-  return api.get<AuditLogEntry[]>("/api/v1/review-queue/audit-log");
+  return api.get<AuditLogEntry[]>("/api/v1/review-queue/audit-log/");
 }
 
 // ── Settings / Users ──────────────────────────────────────────────────────────
@@ -355,7 +355,7 @@ export interface CreateUserPayload {
 }
 
 export function getUsers() {
-  return api.get<AppUser[]>("/api/v1/settings/users");
+  return api.get<AppUser[]>("/api/v1/settings/users/");
 }
 
 export function createUser(payload: CreateUserPayload) {
@@ -599,7 +599,7 @@ export interface CreateTenantPayload {
 }
 
 export function getTenants() {
-  return api.get<TenantSummary[]>("/api/v1/tenants");
+  return api.get<TenantSummary[]>("/api/v1/tenants/");
 }
 
 export function createTenant(payload: CreateTenantPayload) {
