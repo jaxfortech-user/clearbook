@@ -101,7 +101,7 @@ export interface TallyMappingPayload {
 }
 
 export function getClients() {
-  return api.get<Client[]>("/api/v1/clients");
+  return api.get<Client[]>("/api/v1/clients/");
 }
 
 export function getClientById(id: string) {
@@ -165,7 +165,7 @@ export interface Document {
 
 export function getDocuments(clientId?: string) {
   const qs = clientId ? `?client_id=${clientId}` : "";
-  return api.get<Document[]>(`/api/v1/documents${qs}`);
+  return api.get<Document[]>(`/api/v1/documents/${qs}`);
 }
 
 export async function getClientDocuments(clientId: string): Promise<Document[]> {
@@ -268,7 +268,7 @@ export function getVouchers(filters?: VoucherFilters) {
   if (filters?.voucher_type) params.set("voucher_type", filters.voucher_type);
   if (filters?.client_id) params.set("client_id", String(filters.client_id));
   const q = params.toString();
-  return api.get<Voucher[]>(`/api/v1/vouchers${q ? `?${q}` : ""}`);
+  return api.get<Voucher[]>(`/api/v1/vouchers/${q ? `?${q}` : ""}`);
 }
 
 export function getVoucherById(id: string) {
