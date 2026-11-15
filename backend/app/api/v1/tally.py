@@ -312,5 +312,12 @@ def _ensure_ledgers_exist_async_wrapper(company, client, entries, voucher_type):
         except Exception as e:
             raise RuntimeError(f"Error creating ledger '{ledger_name}': {str(e)}")
     return created
-# Alias for backward compatibility
-_ensure_ledgers_exist = _ensure_ledgers_exist_async_wrapper
+# Backward-compatible wrapper: accepts (company, host, port, entries, voucher_type)
+class _TallyConfig:
+    def __init__(self, host, port):
+        self.tally_host = host
+        self.tally_port = port
+
+def _ensure_ledgers_exist(company, host, port, entries, voucher_type):
+    client = _TallyConfig(host, port)
+    return _ensure_ledgers_exist_async_wrapper(company, client, entries, voucher_type)

@@ -197,7 +197,7 @@ async def approve_voucher(
 
     tally_result = None
     if req.post_to_tally and req.tally_company:
-        tally_result = _post_to_tally_sync(v, req.tally_company, req.tally_host, req.tally_port)
+        tally_result = await _post_to_tally_sync(v, req.tally_company, req.tally_host, req.tally_port)
         if tally_result.get("success"):
             v.tally_voucher_id = tally_result.get("tally_voucher_id", "")
             v.tally_company = req.tally_company
@@ -291,7 +291,7 @@ async def post_voucher_to_tally(
     if v.status not in ("approved", "pending_approval"):
         raise HTTPException(400, f"Voucher must be approved before posting. Status: '{v.status}'")
 
-    tally_result = _post_to_tally_sync(v, tally_company, tally_host, tally_port, tally_edu_mode)
+    tally_result = await _post_to_tally_sync(v, tally_company, tally_host, tally_port, tally_edu_mode)
     if tally_result.get("success"):
         v.tally_voucher_id = tally_result.get("tally_voucher_id", "")
         v.tally_company = tally_company
@@ -382,22 +382,27 @@ def _normalize_entries(raw_entries) -> list:
     return normalized
 
 
-def _post_to_tally_sync(v: Voucher, company: str, host: str, port: int, edu_mode: bool = False) -> dict:
+async def _post_to_tally_sync(v: Voucher, company: str, host: str, port: int, edu_mode: bool = False) -> dict:
     try:
-        from app.api.v1.tally import _build_voucher_xml, _post_tally_xml, _extract_voucher_number, _ensure_ledgers_exist
+        from app.api.v1.tally import _build_voucher_xml, _extract_voucher_number
+        from app.core.tally_routing import route_tally_xml
 
         entries = _normalize_entries(v.approved_entries or v.ledger_entries or [])
         if not entries:
             return {"success": False, "error": "No ledger entries on this voucher."}
-
-        _ensure_ledgers_exist(company, host, port, entries, v.voucher_type or "payment")
 
         voucher_date = v.voucher_date.replace(day=1) if edu_mode else v.voucher_date
         xml = _build_voucher_xml(
             company=company, voucher_type=v.voucher_type, date=voucher_date,
             narration=v.narration or "", entries=entries,
         )
-        response_text = _post_tally_xml(host, port, xml)
+
+        class _TallyClient:
+            def __init__(self, h, p):
+                self.tally_host = h
+                self.tally_port = p
+
+        response_text = await route_tally_xml(_TallyClient(host, port), xml)
 
         if "LINEERROR" in response_text or "IMPORTERROR" in response_text:
             return {"success": False, "error": response_text}
