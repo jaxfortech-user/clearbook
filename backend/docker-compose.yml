@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   api:
     image: ${ECR_IMAGE:-clearbook-api:latest}
@@ -7,16 +5,9 @@ services:
     restart: always
     env_file:
       - .env
-    ports:
-      - "8000:8000"
-    networks:
-      - clearbook_net
+    network_mode: host
     logging:
       driver: json-file
       options:
         max-size: "10m"
         max-file: "3"
-
-networks:
-  clearbook_net:
-    driver: bridge
