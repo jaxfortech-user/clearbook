@@ -9,15 +9,16 @@ import { Button } from "@/components/ui/button";
 import {
   ArrowLeft, Building2, FileText, Receipt,
   Phone, Mail, MapPin, Calendar, AlertCircle, Loader2,
-  Plug, CheckCircle, Wifi, WifiOff
+  Plug, CheckCircle, Wifi, WifiOff, ClipboardList, Plus, ChevronDown, ChevronRight
 } from "lucide-react";
 import {
   getClientById, getClientDocuments, getClientVouchers,
   approveVoucher, updateTallyMapping, testTallyConnection,
-  type Client, type Document, type Voucher
+  getPeriods, createPeriod, tickChecklistItem,
+  type Client, type Document, type Voucher, type Period, type ChecklistItem
 } from "@/lib/api";
 
-type Tab = "overview" | "documents" | "vouchers" | "tally";
+type Tab = "overview" | "documents" | "vouchers" | "tally" | "periods";
 
 const statusVariant: Record<string, "success" | "warning" | "default"> = {
   active: "success", pending: "warning", inactive: "default",
@@ -57,6 +58,15 @@ function ClientDetailInner() {
   const id = params.id as string;
 
   const [tab, setTab] = useState<Tab>("overview");
+  const [periods, setPeriods] = useState<Period[]>([]);
+  const [periodsLoading, setPeriodsLoading] = useState(false);
+  const [expandedPeriod, setExpandedPeriod] = useState<string | null>(null);
+  const [showNewPeriod, setShowNewPeriod] = useState(false);
+  const [newPeriodStart, setNewPeriodStart] = useState("");
+  const [newPeriodEnd, setNewPeriodEnd] = useState("");
+  const [newPeriodLabel, setNewPeriodLabel] = useState("");
+  const [newPeriodVat, setNewPeriodVat] = useState(false);
+  const [newPeriodSaving, setNewPeriodSaving] = useState(false);
   const [client, setClient] = useState<Client | null>(null);
   const [documents, setDocuments] = useState<Document[]>([]);
   const [vouchers, setVouchers] = useState<Voucher[]>([]);
@@ -163,6 +173,7 @@ function ClientDetailInner() {
     { key: "documents", label: "Documents", icon: <FileText size={13} /> },
     { key: "vouchers", label: "Vouchers", icon: <Receipt size={13} /> },
     { key: "tally", label: "Tally", icon: <Plug size={13} /> },
+    { key: "periods", label: "Periods", icon: <ClipboardList size={13} /> },
   ];
 
   if (loading) {
@@ -603,6 +614,171 @@ function ClientDetailInner() {
                 </button>
               </div>
             </div>
+
+          </div>
+        )}
+
+        {/* ── PERIODS TAB ── */}
+        {tab === "periods" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+
+            {/* Header row */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <span style={{ fontSize: "13px", fontWeight: 600, color: "#0a0a0a" }}>Accounting Periods</span>
+              <button onClick={() => setShowNewPeriod(v => !v)}
+                style={{ display: "flex", alignItems: "center", gap: "5px", height: "30px", padding: "0 12px", background: "#5266eb", color: "#fff", border: "none", borderRadius: "7px", fontSize: "12.5px", fontWeight: 600, cursor: "pointer", fontFamily: "var(--font-family-sans)" }}
+                onMouseEnter={e => e.currentTarget.style.background = "#4254d4"}
+                onMouseLeave={e => e.currentTarget.style.background = "#5266eb"}
+              >
+                <Plus size={12} /> New Period
+              </button>
+            </div>
+
+            {/* New period form */}
+            {showNewPeriod && (
+              <div style={{ background: "#ffffff", border: "1px solid #ebebeb", borderRadius: "10px", padding: "16px", display: "flex", flexDirection: "column", gap: "12px" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                    <label style={{ fontSize: "11.5px", fontWeight: 600, color: "#525252" }}>Period Start</label>
+                    <input type="date" value={newPeriodStart} onChange={e => setNewPeriodStart(e.target.value)}
+                      style={{ height: "32px", padding: "0 10px", borderRadius: "7px", border: "1px solid #e0e0e0", fontSize: "13px", fontFamily: "var(--font-family-sans)" }} />
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                    <label style={{ fontSize: "11.5px", fontWeight: 600, color: "#525252" }}>Period End</label>
+                    <input type="date" value={newPeriodEnd} onChange={e => setNewPeriodEnd(e.target.value)}
+                      style={{ height: "32px", padding: "0 10px", borderRadius: "7px", border: "1px solid #e0e0e0", fontSize: "13px", fontFamily: "var(--font-family-sans)" }} />
+                  </div>
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                  <label style={{ fontSize: "11.5px", fontWeight: 600, color: "#525252" }}>Label (optional)</label>
+                  <input value={newPeriodLabel} onChange={e => setNewPeriodLabel(e.target.value)} placeholder="e.g. October 2026"
+                    style={{ height: "32px", padding: "0 10px", borderRadius: "7px", border: "1px solid #e0e0e0", fontSize: "13px", fontFamily: "var(--font-family-sans)" }} />
+                </div>
+                <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer" }}>
+                  <input type="checkbox" checked={newPeriodVat} onChange={e => setNewPeriodVat(e.target.checked)} style={{ width: "14px", height: "14px" }} />
+                  <span style={{ fontSize: "12.5px", color: "#525252" }}>VAT period (includes filing steps 22–25)</span>
+                </label>
+                <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
+                  <button onClick={() => setShowNewPeriod(false)}
+                    style={{ height: "30px", padding: "0 14px", background: "none", border: "1px solid #e0e0e0", borderRadius: "7px", fontSize: "12.5px", cursor: "pointer", fontFamily: "var(--font-family-sans)" }}>
+                    Cancel
+                  </button>
+                  <button onClick={handleCreatePeriod} disabled={newPeriodSaving || !newPeriodStart || !newPeriodEnd}
+                    style={{ height: "30px", padding: "0 14px", background: "#5266eb", color: "#fff", border: "none", borderRadius: "7px", fontSize: "12.5px", fontWeight: 600, cursor: "pointer", fontFamily: "var(--font-family-sans)", opacity: (!newPeriodStart || !newPeriodEnd) ? 0.5 : 1 }}>
+                    {newPeriodSaving ? "Creating…" : "Create Period"}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Periods list */}
+            {periodsLoading && (
+              <div style={{ display: "flex", justifyContent: "center", padding: "32px" }}>
+                <Loader2 size={18} color="#5266eb" style={{ animation: "spin 1s linear infinite" }} />
+              </div>
+            )}
+
+            {!periodsLoading && periods.length === 0 && (
+              <div style={{ textAlign: "center", padding: "40px", color: "#a3a3a3", fontSize: "13px" }}>
+                No periods yet. Click <strong>New Period</strong> to open the first month.
+              </div>
+            )}
+
+            {!periodsLoading && periods.map(period => {
+              const total = period.checklist.length;
+              const done = period.checklist.filter(i => i.status === "COMPLETE").length;
+              const pct = total ? Math.round((done / total) * 100) : 0;
+              const isOpen = expandedPeriod === period.id;
+              const statusColor: Record<string, string> = { OPEN: "#f59e0b", CLOSED: "#059669", FILED: "#5266eb" };
+              const statusBg: Record<string, string> = { OPEN: "#fffbeb", CLOSED: "#d1fae5", FILED: "#eef0fd" };
+              const phases = ["OPEN_MONTH", "TRANSACTION_ENTRY", "RECONCILIATION", "MONTH_END_ADJUSTMENTS", "CLOSE_AND_VERIFY", "FILING"];
+              const phaseLabels: Record<string, string> = {
+                OPEN_MONTH: "Phase 1 — Open Month",
+                TRANSACTION_ENTRY: "Phase 2 — Transaction Entry",
+                RECONCILIATION: "Phase 3 — Reconciliation",
+                MONTH_END_ADJUSTMENTS: "Phase 4 — Month-End Adjustments",
+                CLOSE_AND_VERIFY: "Phase 5 — Close & Verify",
+                FILING: "Phase 6 — Filing",
+              };
+              return (
+                <div key={period.id} style={{ background: "#ffffff", border: "1px solid #ebebeb", borderRadius: "10px", overflow: "hidden" }}>
+                  {/* Period header row */}
+                  <div onClick={() => setExpandedPeriod(isOpen ? null : period.id)}
+                    style={{ display: "flex", alignItems: "center", gap: "12px", padding: "12px 16px", cursor: "pointer" }}
+                    onMouseEnter={e => e.currentTarget.style.background = "#fafafa"}
+                    onMouseLeave={e => e.currentTarget.style.background = "#ffffff"}
+                  >
+                    {isOpen ? <ChevronDown size={14} color="#737373" /> : <ChevronRight size={14} color="#737373" />}
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: "13px", fontWeight: 600, color: "#0a0a0a" }}>
+                        {period.label || `${period.period_start} → ${period.period_end}`}
+                      </div>
+                      <div style={{ fontSize: "11.5px", color: "#a3a3a3", marginTop: "1px" }}>
+                        {period.period_start} – {period.period_end}
+                        {period.is_vat_period && <span style={{ marginLeft: "8px", color: "#5266eb", fontWeight: 600 }}>VAT</span>}
+                      </div>
+                    </div>
+                    {/* Progress bar */}
+                    <div style={{ width: "80px" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "3px" }}>
+                        <span style={{ fontSize: "10.5px", color: "#a3a3a3" }}>{done}/{total}</span>
+                        <span style={{ fontSize: "10.5px", color: "#a3a3a3" }}>{pct}%</span>
+                      </div>
+                      <div style={{ height: "4px", background: "#f0f0f0", borderRadius: "2px" }}>
+                        <div style={{ width: `${pct}%`, height: "100%", background: "#5266eb", borderRadius: "2px", transition: "width 0.3s" }} />
+                      </div>
+                    </div>
+                    {/* Status badge */}
+                    <span style={{ fontSize: "11px", fontWeight: 600, padding: "3px 8px", borderRadius: "5px", background: statusBg[period.status] ?? "#f5f5f5", color: statusColor[period.status] ?? "#737373" }}>
+                      {period.status}
+                    </span>
+                  </div>
+
+                  {/* Expanded checklist */}
+                  {isOpen && (
+                    <div style={{ borderTop: "1px solid #ebebeb" }}>
+                      {phases.map(phase => {
+                        const items = period.checklist.filter(i => i.phase === phase);
+                        if (items.length === 0) return null;
+                        return (
+                          <div key={phase}>
+                            <div style={{ padding: "8px 16px 4px", fontSize: "11px", fontWeight: 700, color: "#a3a3a3", textTransform: "uppercase" as const, letterSpacing: "0.06em", background: "#fafafa", borderBottom: "1px solid #f0f0f0" }}>
+                              {phaseLabels[phase]}
+                            </div>
+                            {items.map(item => {
+                              const isNA = item.status === "NOT_APPLICABLE";
+                              const isDone = item.status === "COMPLETE";
+                              return (
+                                <div key={item.id} style={{ display: "flex", alignItems: "flex-start", gap: "10px", padding: "9px 16px", borderBottom: "1px solid #f5f5f5", opacity: isNA ? 0.45 : 1 }}>
+                                  <input type="checkbox" checked={isDone} disabled={isNA}
+                                    onChange={() => !isNA && handleTickItem(period.id, item.item_key, item.status)}
+                                    style={{ marginTop: "1px", width: "14px", height: "14px", cursor: isNA ? "default" : "pointer", flexShrink: 0 }}
+                                  />
+                                  <div style={{ flex: 1 }}>
+                                    <div style={{ fontSize: "12.5px", color: isDone ? "#a3a3a3" : "#0a0a0a", textDecoration: isDone ? "line-through" : "none", fontWeight: 500 }}>
+                                      {item.step_number}. {item.title}
+                                    </div>
+                                    {item.description && (
+                                      <div style={{ fontSize: "11px", color: "#a3a3a3", marginTop: "2px" }}>{item.description}</div>
+                                    )}
+                                  </div>
+                                  {isDone && item.completed_at && (
+                                    <span style={{ fontSize: "10.5px", color: "#a3a3a3", flexShrink: 0 }}>
+                                      {new Date(item.completed_at).toLocaleDateString("en-AE")}
+                                    </span>
+                                  )}
+                                  {isNA && <span style={{ fontSize: "10.5px", color: "#a3a3a3", flexShrink: 0 }}>N/A</span>}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
 
           </div>
         )}

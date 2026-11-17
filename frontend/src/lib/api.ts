@@ -692,3 +692,61 @@ export function getConnectorKey() {
 export function regenerateConnectorKey() {
   return api.post<ConnectorKeyResponse>("/api/v1/connector/key/regenerate", {});
 }// rebuild Fri Nov 13 00:17:13 UTC 2026
+
+// ── Periods ───────────────────────────────────────────────────────────────────
+export interface ChecklistItem {
+  id: string;
+  step_number: number;
+  item_key: string;
+  phase: string;
+  title: string;
+  description?: string;
+  status: "PENDING" | "IN_PROGRESS" | "COMPLETE" | "NOT_APPLICABLE";
+  completed_by?: string;
+  completed_at?: string;
+  notes?: string;
+}
+
+export interface Period {
+  id: string;
+  client_id: string;
+  period_start: string;
+  period_end: string;
+  label?: string;
+  is_vat_period: boolean;
+  status: "OPEN" | "CLOSED" | "FILED";
+  assigned_to?: string;
+  closed_at?: string;
+  filed_at?: string;
+  checklist: ChecklistItem[];
+}
+
+export interface CreatePeriodPayload {
+  client_id: string;
+  period_start: string;
+  period_end: string;
+  label?: string;
+  is_vat_period?: boolean;
+  vat_quarter_end?: string;
+  assigned_to?: string;
+}
+
+export function getPeriods(clientId: string) {
+  return api.get<Period[]>(`/api/v1/periods/?client_id=${clientId}`);
+}
+
+export function createPeriod(payload: CreatePeriodPayload) {
+  return api.post<Period>("/api/v1/periods/", payload);
+}
+
+export function tickChecklistItem(
+  periodId: string,
+  itemKey: string,
+  status: string,
+  notes?: string
+) {
+  return api.patch<ChecklistItem>(
+    `/api/v1/periods/${periodId}/checklist/${itemKey}`,
+    { status, notes }
+  );
+}
