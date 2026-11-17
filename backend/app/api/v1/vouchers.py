@@ -19,6 +19,7 @@ from sqlalchemy import select, func
 from app.core.database import get_db
 from app.core.deps import get_current_user, tenant_filter
 from app.models.voucher import Voucher
+from app.models.client import Client
 from app.models.document import Document
 from app.models.user import User
 from app.services.audit_service import log as audit_log
@@ -31,6 +32,9 @@ router = APIRouter()
 class VoucherEntrySchema(BaseModel):
     ledger_name: str
     is_debit: bool
+    vat_amount: Optional[float] = 0.0
+    bill_ref: Optional[str] = None
+    line_narration: Optional[str] = None
     amount: float
     notes: Optional[str] = None
 
@@ -291,7 +295,9 @@ async def post_voucher_to_tally(
     if v.status not in ("approved", "pending_approval"):
         raise HTTPException(400, f"Voucher must be approved before posting. Status: '{v.status}'")
 
-    tally_result = await _post_to_tally_sync(v, tally_company, tally_host, tally_port, tally_edu_mode)
+    client_result = await db.execute(select(Client).filter(Client.id == v.client_id))
+    tally_client_obj = client_result.scalar_one_or_none()
+    tally_result = await _post_to_tally_sync(v, tally_company, tally_host, tally_port, tally_edu_mode, client_obj=tally_client_obj)
     if tally_result.get("success"):
         v.tally_voucher_id = tally_result.get("tally_voucher_id", "")
         v.tally_company = tally_company
@@ -340,6 +346,9 @@ async def check_duplicate_invoice(db: AsyncSession, client_id: str, invoice_numb
 # -- Auto ledger entry generator ---------------------------------------------
 
 def _auto_ledger_entries(voucher_type: str, party_name: str | None, amount: float) -> list:
+    # Journal and Contra: return empty — user must supply lines manually
+    if voucher_type.lower() in ("journal", "contra"):
+        return []
     party = (party_name or "Party Account").strip()
     vtype = (voucher_type or "payment").lower()
     if vtype == "payment":
@@ -382,9 +391,9 @@ def _normalize_entries(raw_entries) -> list:
     return normalized
 
 
-async def _post_to_tally_sync(v: Voucher, company: str, host: str, port: int, edu_mode: bool = False) -> dict:
+async def _post_to_tally_sync(v: Voucher, company: str, host: str, port: int, edu_mode: bool = False, client_obj=None) -> dict:
     try:
-        from app.api.v1.tally import _build_voucher_xml, _extract_voucher_number
+        from app.api.v1.tally import _build_voucher_xml, _extract_voucher_number, _ensure_ledgers_via_tunnel
         from app.core.tally_routing import route_tally_xml
 
         entries = _normalize_entries(v.approved_entries or v.ledger_entries or [])
@@ -397,15 +406,36 @@ async def _post_to_tally_sync(v: Voucher, company: str, host: str, port: int, ed
             narration=v.narration or "", entries=entries,
         )
 
-        class _TallyClient:
-            def __init__(self, h, p):
-                self.tally_host = h
-                self.tally_port = p
+        await _ensure_ledgers_via_tunnel(company, client_obj if client_obj else type('C', (), {'tally_host': host, 'tally_port': port, 'tenant_id': None, 'id': v.client_id, 'name': company, 'tally_direct_mode': False})(), entries, v.voucher_type or "payment")
 
-        response_text = await route_tally_xml(_TallyClient(host, port), xml)
+        if client_obj is None:
+            class _TallyClient:
+                def __init__(self, h, p, cid):
+                    self.tally_host = h
+                    self.tally_port = p
+                    self.tenant_id = None
+                    self.id = cid
+                    self.name = company
+                    self.tally_direct_mode = False
+            client_obj = _TallyClient(host, port, v.client_id)
+
+        response_text = await route_tally_xml(client_obj, xml)
+        print(f"[TALLY DEBUG] company={company} response={response_text[:800]}", flush=True)
 
         if "LINEERROR" in response_text or "IMPORTERROR" in response_text:
             return {"success": False, "error": response_text}
+
+        # Check CREATED count — EDU/strict Tally may accept HTTP but create 0 vouchers
+        import xml.etree.ElementTree as _ET
+        try:
+            _root = _ET.fromstring(response_text)
+            _created = _root.find(".//CREATED")
+            if _created is not None and _created.text and int(_created.text) == 0:
+                _ignored = _root.find(".//IGNORED")
+                _exceptions = _root.find(".//EXCEPTIONS")
+                return {"success": False, "error": f"Tally accepted request but created 0 vouchers. IGNORED={getattr(_ignored,'text','?')} EXCEPTIONS={getattr(_exceptions,'text','?')} Response: {response_text[:500]}"}
+        except Exception:
+            pass
 
         tally_id = _extract_voucher_number(response_text) or getattr(v, "voucher_number", "") or ""
         return {"success": True, "tally_voucher_id": tally_id, "status": "synced_to_tally"}

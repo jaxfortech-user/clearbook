@@ -201,18 +201,30 @@ def _build_voucher_xml(company, voucher_type, date, narration, entries) -> str:
         "credit note": "Credit Note", "debit note": "Debit Note",
     }
     tally_vch_type = vch_type_map.get((voucher_type or "journal").lower(), "Journal")
+    bill_types = {"payment", "receipt"}
+    use_bill = tally_vch_type.lower() in bill_types
     ledger_xml = ""
     for entry in entries:
         ledger_name = entry.get("ledger_name", "")
         is_debit = entry.get("is_debit", True)
         amount = float(entry.get("amount", 0))
+        vat_amount = float(entry.get("vat_amount", 0))
+        bill_ref = entry.get("bill_ref", "")
         tally_amount = amount if not is_debit else -amount
         is_deemed_positive = "Yes" if is_debit else "No"
+        bill_xml = ""
+        if use_bill and bill_ref:
+            bill_xml = f"""
+            <BILLALLOCATIONS.LIST>
+              <NAME>{_xml_escape(bill_ref)}</NAME>
+              <BILLTYPE>Against Ref</BILLTYPE>
+              <AMOUNT>{tally_amount:.2f}</AMOUNT>
+            </BILLALLOCATIONS.LIST>"""
         ledger_xml += f"""
           <ALLLEDGERENTRIES.LIST>
             <LEDGERNAME>{_xml_escape(ledger_name)}</LEDGERNAME>
             <ISDEEMEDPOSITIVE>{is_deemed_positive}</ISDEEMEDPOSITIVE>
-            <AMOUNT>{tally_amount:.2f}</AMOUNT>
+            <AMOUNT>{tally_amount:.2f}</AMOUNT>{bill_xml}
           </ALLLEDGERENTRIES.LIST>"""
     return f"""<ENVELOPE>
   <HEADER><TALLYREQUEST>Import Data</TALLYREQUEST></HEADER>
@@ -312,6 +324,30 @@ def _ensure_ledgers_exist_async_wrapper(company, client, entries, voucher_type):
         except Exception as e:
             raise RuntimeError(f"Error creating ledger '{ledger_name}': {str(e)}")
     return created
+
+async def _ensure_ledgers_via_tunnel(company, client_obj, entries, voucher_type):
+    """Async version of _ensure_ledgers_exist_async_wrapper that routes through WebSocket tunnel."""
+    from app.core.tally_routing import route_tally_xml
+    created = []
+    for entry in entries:
+        ledger_name = entry.get("ledger_name", "").strip()
+        if not ledger_name:
+            continue
+        is_debit = entry.get("is_debit", True)
+        under_group = _guess_ledger_group(ledger_name, is_debit, voucher_type)
+        xml = _create_ledger_xml(company, ledger_name, under_group)
+        try:
+            response = await route_tally_xml(client_obj, xml)
+            if "LINEERROR" in response or "IMPORTERROR" in response:
+                continue  # ledger likely already exists; non-fatal
+            root = ET.fromstring(response)
+            created_el = root.find(".//CREATED")
+            if created_el is not None and created_el.text and int(created_el.text) > 0:
+                created.append(ledger_name)
+        except Exception:
+            pass  # best-effort; voucher post will surface any real issue
+    return created
+
 # Backward-compatible wrapper: accepts (company, host, port, entries, voucher_type)
 class _TallyConfig:
     def __init__(self, host, port):
