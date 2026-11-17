@@ -9,6 +9,7 @@ from typing import Optional
 
 from app.core.database import get_db
 from app.core.tally_routing import route_tally_xml
+from app.core.deps import get_current_user
 from app.models.client import Client
 from app.models.tenant import Tenant
 
