@@ -34,12 +34,14 @@ function FieldRow({ label, value }: { label: string; value?: string | number | n
 interface LedgerEntry {
   ledger_name: string;
   is_debit: boolean;
+  vat_amount?: number;
+  bill_ref?: string;
   amount: number;
   notes?: string;
 }
 
 function emptyEntry(): LedgerEntry {
-  return { ledger_name: "", is_debit: true, amount: 0 };
+  return { ledger_name: "", is_debit: true, amount: 0, vat_amount: 0, bill_ref: "" };
 }
 
 function VoucherDetailPage() {
@@ -474,7 +476,7 @@ function VoucherDetailPage() {
                 )}
 
                 {entries.map((entry, idx) => (
-                  <div key={idx} style={{ display: "grid", gridTemplateColumns: "1fr 90px 130px 32px", gap: "8px", marginBottom: "7px", alignItems: "center" }}>
+                  <div key={idx} style={{ display: "grid", gridTemplateColumns: "1fr 90px 110px 80px 110px 32px", gap: "6px", marginBottom: "7px", alignItems: "center" }}>
                     {/* Ledger name — picks from master, falls back to free text */}
                     <div style={{ position: "relative" }}>
                       <input
@@ -526,6 +528,32 @@ function VoucherDetailPage() {
                       onBlur={e => { e.currentTarget.style.borderColor = "#e0e0e0"; }}
                     />
 
+                    {/* VAT Amount */}
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={entry.vat_amount || ""}
+                      onChange={e => updateEntry(idx, "vat_amount", parseFloat(e.target.value) || 0)}
+                      placeholder="VAT"
+                      disabled={!canEditEntries}
+                      style={{ height: "34px", padding: "0 8px", border: "1px solid #e0e0e0", borderRadius: "7px", fontSize: "12px", fontFamily: "var(--font-family-sans)", background: canEditEntries ? "#fff" : "#f9f9f9", color: "#0a0a0a", outline: "none", textAlign: "right" }}
+                      onFocus={e => { e.currentTarget.style.borderColor = "#5266eb"; }}
+                      onBlur={e => { e.currentTarget.style.borderColor = "#e0e0e0"; }}
+                    />
+
+                    {/* Bill Ref */}
+                    <input
+                      type="text"
+                      value={entry.bill_ref || ""}
+                      onChange={e => updateEntry(idx, "bill_ref", e.target.value)}
+                      placeholder="Bill ref"
+                      disabled={!canEditEntries}
+                      style={{ height: "34px", padding: "0 8px", border: "1px solid #e0e0e0", borderRadius: "7px", fontSize: "12px", fontFamily: "var(--font-family-sans)", background: canEditEntries ? "#fff" : "#f9f9f9", color: "#0a0a0a", outline: "none" }}
+                      onFocus={e => { e.currentTarget.style.borderColor = "#5266eb"; }}
+                      onBlur={e => { e.currentTarget.style.borderColor = "#e0e0e0"; }}
+                    />
+
                     {/* Delete */}
                     {canEditEntries ? (
                       <button onClick={() => removeRow(idx)}
@@ -541,7 +569,7 @@ function VoucherDetailPage() {
 
                 {/* Totals row */}
                 {entries.length > 0 && (
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 90px 130px 32px", gap: "8px", marginTop: "10px", paddingTop: "10px", borderTop: "2px solid #ebebeb" }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 90px 110px 80px 110px 32px", gap: "6px", marginTop: "10px", paddingTop: "10px", borderTop: "2px solid #ebebeb" }}>
                     <span style={{ fontSize: "12px", fontWeight: 700, color: "#525252", textAlign: "right", paddingRight: "8px" }}>Total</span>
                     <span />
                     <div style={{ display: "flex", justifyContent: "space-between", padding: "0 4px", fontSize: "12px", fontWeight: 700 }}>
