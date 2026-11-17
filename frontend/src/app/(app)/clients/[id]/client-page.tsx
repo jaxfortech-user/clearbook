@@ -14,8 +14,8 @@ import {
 import {
   getClientById, getClientDocuments, getClientVouchers,
   approveVoucher, updateTallyMapping, testTallyConnection,
-  getPeriods, createPeriod, tickChecklistItem,
-  type Client, type Document, type Voucher, type Period, type PeriodChecklistItem
+  getPeriods, createPeriod, tickChecklistItem, getVatReturn, updateVatReturn,
+  type Client, type Document, type Voucher, type Period, type PeriodChecklistItem, type VATReturn
 } from "@/lib/api";
 
 type Tab = "overview" | "documents" | "vouchers" | "tally" | "periods";
