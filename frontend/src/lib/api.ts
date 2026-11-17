@@ -750,3 +750,36 @@ export function tickChecklistItem(
     { status, notes }
   );
 }
+
+export interface VATBoxes {
+  box1: { amount: number; vat: number };
+  box2: { amount: number; vat: number };
+  box3: { amount: number; vat: number };
+  box4: { amount: number };
+  box5: { amount: number };
+  box6: { amount: number; vat: number };
+  box7: { amount: number; vat: number };
+  box8_total_output_vat: number;
+  box9: { amount: number; vat: number };
+  box10: { amount: number; vat: number };
+  box11: { amount: number; vat: number };
+  box12: { amount: number; vat: number };
+  box13_total_input_vat: number;
+  box14_net_vat_due: number;
+}
+export interface VATReturn {
+  id: string;
+  period_id: string;
+  status: string;
+  boxes: VATBoxes;
+  emaratax_ref?: string;
+  submitted_at?: string;
+  approved_at?: string;
+}
+
+export function getVatReturn(periodId: string) {
+  return api.get<VATReturn>(`/api/v1/periods/${periodId}/vat`);
+}
+export function updateVatReturn(periodId: string, payload: Record<string, number>) {
+  return api.patch<VATReturn>(`/api/v1/periods/${periodId}/vat`, payload);
+}

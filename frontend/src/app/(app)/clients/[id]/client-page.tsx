@@ -67,6 +67,8 @@ function ClientDetailInner() {
   const [newPeriodLabel, setNewPeriodLabel] = useState("");
   const [newPeriodVat, setNewPeriodVat] = useState(false);
   const [newPeriodSaving, setNewPeriodSaving] = useState(false);
+  const [vatReturns, setVatReturns] = useState<Record<string, VATReturn>>({});
+  const [vatSaving, setVatSaving] = useState(false);
   const [client, setClient] = useState<Client | null>(null);
   const [documents, setDocuments] = useState<Document[]>([]);
   const [vouchers, setVouchers] = useState<Voucher[]>([]);
@@ -184,6 +186,23 @@ function ClientDetailInner() {
       setNewPeriodStart(""); setNewPeriodEnd(""); setNewPeriodLabel(""); setNewPeriodVat(false);
     } catch { /* ignore */ }
     finally { setNewPeriodSaving(false); }
+  }
+
+  async function loadVatReturn(period: Period) {
+    if (!period.is_vat_period) return;
+    if (vatReturns[period.id]) return;
+    try {
+      const vr = await getVatReturn(period.id);
+      setVatReturns(prev => ({ ...prev, [period.id]: vr }));
+    } catch {}
+  }
+
+  async function handleUpdateVat(periodId: string, field: string, value: number) {
+    setVatSaving(true);
+    try {
+      const updated = await updateVatReturn(periodId, { [field]: value });
+      setVatReturns(prev => ({ ...prev, [periodId]: updated }));
+    } catch {} finally { setVatSaving(false); }
   }
 
   async function handleTickItem(periodId: string, itemKey: string, currentStatus: string) {
@@ -804,6 +823,86 @@ function ClientDetailInner() {
                           </div>
                         );
                       })}
+                {/* VAT Return Form */}
+                {period.is_vat_period && vatReturns[period.id] && (() => {
+                  const vr = vatReturns[period.id];
+                  const b = vr.boxes;
+                  const aed = (n: number) => "AED " + n.toLocaleString("en-AE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                  const inpStyle = { height: "30px", padding: "0 8px", border: "1px solid #e0e0e0", borderRadius: "6px", fontSize: "12px", width: "130px", textAlign: "right" as const, fontFamily: "var(--font-family-sans)" };
+                  const rowSt = { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "7px 16px", borderBottom: "1px solid #f5f5f5", fontSize: "12.5px" };
+                  const lbl = { color: "#525252", flex: 1 };
+                  const autoVal = { fontSize: "12.5px", fontWeight: 600, color: "#0a0a0a", width: "130px", textAlign: "right" as const };
+                  const secHdr = { padding: "7px 16px 4px", fontSize: "11px", fontWeight: 700, color: "#a3a3a3", textTransform: "uppercase" as const, letterSpacing: "0.06em", background: "#fafafa", borderBottom: "1px solid #f0f0f0", display: "flex", justifyContent: "space-between" };
+                  return (
+                    <div style={{ borderTop: "2px solid #5266eb" }}>
+                      <div style={{ padding: "10px 16px 6px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                        <span style={{ fontSize: "12px", fontWeight: 700, color: "#5266eb" }}>UAE VAT Return (VAT 201)</span>
+                        <span style={{ fontSize: "11px", padding: "2px 8px", borderRadius: "4px", background: vr.status === "APPROVED" ? "#f0fdf4" : "#fef9c3", color: vr.status === "APPROVED" ? "#059669" : "#b45309", fontWeight: 600 }}>{vr.status}</span>
+                      </div>
+                      <div style={secHdr}><span>A — Sales &amp; All Other Outputs</span><span style={{ color: "#737373", fontWeight: 400 }}>Amount (AED) | VAT (AED)</span></div>
+                      <div style={rowSt}><span style={lbl}>Box 1 — Standard rated supplies (5%)</span>
+                        <div style={{ display: "flex", gap: "6px" }}>
+                          <input type="number" style={inpStyle} placeholder="Amount" value={b.box1.amount || ""} onChange={e => handleUpdateVat(period.id, "box1_amount", parseFloat(e.target.value)||0)} />
+                          <input type="number" style={inpStyle} placeholder="VAT" value={b.box1.vat || ""} onChange={e => handleUpdateVat(period.id, "box1_vat", parseFloat(e.target.value)||0)} />
+                        </div>
+                      </div>
+                      <div style={rowSt}><span style={lbl}>Box 2 — Exempt supplies</span>
+                        <input type="number" style={inpStyle} placeholder="Amount" value={b.box2.amount || ""} onChange={e => handleUpdateVat(period.id, "box2_amount", parseFloat(e.target.value)||0)} />
+                      </div>
+                      <div style={rowSt}><span style={lbl}>Box 3 — Zero-rated supplies</span>
+                        <input type="number" style={inpStyle} placeholder="Amount" value={b.box3.amount || ""} onChange={e => handleUpdateVat(period.id, "box3_amount", parseFloat(e.target.value)||0)} />
+                      </div>
+                      <div style={{ ...rowSt, background: "#fafafa" }}><span style={{ ...lbl, fontWeight: 600 }}>Box 4 — Total sales (auto)</span><span style={autoVal}>{aed(b.box4.amount)}</span></div>
+                      <div style={rowSt}><span style={lbl}>Box 5 — Reverse charge supplies</span>
+                        <input type="number" style={inpStyle} placeholder="Amount" value={b.box5.amount || ""} onChange={e => handleUpdateVat(period.id, "box5_amount", parseFloat(e.target.value)||0)} />
+                      </div>
+                      <div style={{ ...rowSt, background: "#eff6ff" }}><span style={{ ...lbl, fontWeight: 700, color: "#1d4ed8" }}>Box 8 — Total Output VAT</span><span style={{ ...autoVal, color: "#1d4ed8", fontSize: "14px" }}>{aed(b.box8_total_output_vat)}</span></div>
+                      <div style={secHdr}><span>B — Purchases &amp; All Other Inputs</span><span style={{ color: "#737373", fontWeight: 400 }}>Amount (AED) | VAT (AED)</span></div>
+                      <div style={rowSt}><span style={lbl}>Box 6 — Standard rated expenses (5%)</span>
+                        <div style={{ display: "flex", gap: "6px" }}>
+                          <input type="number" style={inpStyle} placeholder="Amount" value={b.box6.amount || ""} onChange={e => handleUpdateVat(period.id, "box6_amount", parseFloat(e.target.value)||0)} />
+                          <input type="number" style={inpStyle} placeholder="VAT" value={b.box6.vat || ""} onChange={e => handleUpdateVat(period.id, "box6_vat", parseFloat(e.target.value)||0)} />
+                        </div>
+                      </div>
+                      <div style={rowSt}><span style={lbl}>Box 7 — Exempt purchases</span>
+                        <input type="number" style={inpStyle} placeholder="Amount" value={b.box7.amount || ""} onChange={e => handleUpdateVat(period.id, "box7_amount", parseFloat(e.target.value)||0)} />
+                      </div>
+                      <div style={rowSt}><span style={lbl}>Box 9 — Goods imported into UAE</span>
+                        <div style={{ display: "flex", gap: "6px" }}>
+                          <input type="number" style={inpStyle} placeholder="Amount" value={b.box9.amount || ""} onChange={e => handleUpdateVat(period.id, "box9_amount", parseFloat(e.target.value)||0)} />
+                          <input type="number" style={inpStyle} placeholder="VAT" value={b.box9.vat || ""} onChange={e => handleUpdateVat(period.id, "box9_vat", parseFloat(e.target.value)||0)} />
+                        </div>
+                      </div>
+                      <div style={rowSt}><span style={lbl}>Box 10 — Adjustments (output VAT)</span>
+                        <div style={{ display: "flex", gap: "6px" }}>
+                          <input type="number" style={inpStyle} placeholder="Amount" value={b.box10.amount || ""} onChange={e => handleUpdateVat(period.id, "box10_amount", parseFloat(e.target.value)||0)} />
+                          <input type="number" style={inpStyle} placeholder="VAT" value={b.box10.vat || ""} onChange={e => handleUpdateVat(period.id, "box10_vat", parseFloat(e.target.value)||0)} />
+                        </div>
+                      </div>
+                      <div style={rowSt}><span style={lbl}>Box 11 — Adjustments (input VAT)</span>
+                        <div style={{ display: "flex", gap: "6px" }}>
+                          <input type="number" style={inpStyle} placeholder="Amount" value={b.box11.amount || ""} onChange={e => handleUpdateVat(period.id, "box11_amount", parseFloat(e.target.value)||0)} />
+                          <input type="number" style={inpStyle} placeholder="VAT" value={b.box11.vat || ""} onChange={e => handleUpdateVat(period.id, "box11_vat", parseFloat(e.target.value)||0)} />
+                        </div>
+                      </div>
+                      <div style={rowSt}><span style={lbl}>Box 12 — Output VAT due on imports</span>
+                        <div style={{ display: "flex", gap: "6px" }}>
+                          <input type="number" style={inpStyle} placeholder="Amount" value={b.box12.amount || ""} onChange={e => handleUpdateVat(period.id, "box12_amount", parseFloat(e.target.value)||0)} />
+                          <input type="number" style={inpStyle} placeholder="VAT" value={b.box12.vat || ""} onChange={e => handleUpdateVat(period.id, "box12_vat", parseFloat(e.target.value)||0)} />
+                        </div>
+                      </div>
+                      <div style={{ ...rowSt, background: "#eff6ff" }}><span style={{ ...lbl, fontWeight: 700, color: "#1d4ed8" }}>Box 13 — Total Input VAT recoverable</span><span style={{ ...autoVal, color: "#1d4ed8", fontSize: "14px" }}>{aed(b.box13_total_input_vat)}</span></div>
+                      <div style={{ margin: "12px 16px", padding: "14px 20px", background: b.box14_net_vat_due > 0 ? "#fef2f2" : "#f0fdf4", borderRadius: "10px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                        <div>
+                          <div style={{ fontSize: "11px", fontWeight: 700, color: "#737373", textTransform: "uppercase" as const, letterSpacing: "0.06em" }}>Box 14 — Net VAT Payable to FTA</div>
+                          <div style={{ fontSize: "10.5px", color: "#a3a3a3", marginTop: "2px" }}>Box 8 − Box 13</div>
+                        </div>
+                        <div style={{ fontSize: "22px", fontWeight: 800, color: b.box14_net_vat_due > 0 ? "#dc2626" : "#059669" }}>{aed(b.box14_net_vat_due)}</div>
+                      </div>
+                      {vatSaving && <div style={{ padding: "4px 16px 8px", fontSize: "11px", color: "#a3a3a3" }}>Saving…</div>}
+                    </div>
+                  );
+                })()}
                     </div>
                   )}
                 </div>
