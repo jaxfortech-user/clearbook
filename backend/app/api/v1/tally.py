@@ -357,3 +357,68 @@ class _TallyConfig:
 def _ensure_ledgers_exist(company, host, port, entries, voucher_type):
     client = _TallyConfig(host, port)
     return _ensure_ledgers_exist_async_wrapper(company, client, entries, voucher_type)
+
+
+# ── Ledger push ───────────────────────────────────────────────────────────────
+
+@router.post("/push-ledgers/{client_id}")
+async def push_ledgers_to_tally(
+    client_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """Bulk-push all active tenant ledgers to Tally as masters."""
+    from app.models.ledger import Ledger
+
+    result = await db.execute(select(Client).where(Client.id == client_id))
+    client = result.scalar_one_or_none()
+    if not client:
+        raise HTTPException(404, "Client not found")
+
+    company = client.tally_company or ""
+    if not company:
+        raise HTTPException(422, "No Tally company configured for this client. Set it in Tally Settings first.")
+
+    ledger_result = await db.execute(
+        select(Ledger).where(
+            Ledger.tenant_id == current_user.tenant_id,
+            Ledger.is_active == True,
+        ).order_by(Ledger.name)
+    )
+    ledgers = ledger_result.scalars().all()
+
+    if not ledgers:
+        return {"pushed": 0, "created": 0, "already_exists": 0, "errors": [],
+                "message": "No active ledgers found — add ledgers first."}
+
+    created, already_exists, errors = [], [], []
+
+    for ledger in ledgers:
+        xml = _create_ledger_xml(company, ledger.tally_name, ledger.group or "Sundry Creditors")
+        try:
+            response = await route_tally_xml(client, xml)
+            # LINEERROR / IMPORTERROR usually means ledger already exists — non-fatal
+            if "LINEERROR" in response or "IMPORTERROR" in response:
+                already_exists.append(ledger.tally_name)
+                continue
+            root = ET.fromstring(response)
+            created_el = root.find(".//CREATED")
+            if created_el is not None and created_el.text and int(created_el.text) > 0:
+                created.append(ledger.tally_name)
+            else:
+                already_exists.append(ledger.tally_name)
+        except Exception as e:
+            errors.append({"ledger": ledger.tally_name, "error": str(e)})
+
+    return {
+        "pushed": len(ledgers),
+        "created": len(created),
+        "already_exists": len(already_exists),
+        "errors": errors,
+        "created_names": created,
+        "message": (
+            f"Pushed {len(ledgers)} ledgers — "
+            f"{len(created)} created, {len(already_exists)} already existed"
+            + (f", {len(errors)} errors" if errors else "")
+        ),
+    }

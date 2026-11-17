@@ -821,3 +821,24 @@ export async function createFromTemplate(templateId: string, newDate: string, ne
   if (!res.ok) throw new Error("Failed to create from template")
   return res.json()
 }
+
+export interface LedgerPushResult {
+  pushed: number;
+  created: number;
+  already_exists: number;
+  errors: { ledger: string; error: string }[];
+  created_names: string[];
+  message: string;
+}
+
+export async function pushLedgersToTally(clientId: string): Promise<LedgerPushResult> {
+  const res = await fetch(`${API_BASE}/tally/push-ledgers/${clientId}`, {
+    method: "POST",
+    headers: await authHeaders(),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Failed to push ledgers to Tally");
+  }
+  return res.json();
+}

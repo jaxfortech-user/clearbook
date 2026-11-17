@@ -3,7 +3,7 @@
 import { useEffect, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { Topbar } from "@/components/layout/topbar";
-import { AlertCircle, CheckCircle, Loader2, Plug, Copy, Check, Download } from "lucide-react";
+import { AlertCircle, CheckCircle, Loader2, Plug, Copy, Check, Download, Database } from "lucide-react";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -88,6 +88,8 @@ function TallySettingsInner() {
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [testError, setTestError] = useState("");
+  const [pushingLedgers, setPushingLedgers] = useState(false);
+  const [pushResult, setPushResult] = useState<{ ok: boolean; message: string; detail?: string } | null>(null);
 
   function getToken() {
     return typeof window !== "undefined" ? localStorage.getItem("clearbook_token") : null;
@@ -209,6 +211,31 @@ function TallySettingsInner() {
       setTestResult({ ok: false, message: e?.message || "Could not reach Tally. Make sure Tally is running and the port is open." });
     } finally {
       setTesting(false);
+    }
+  }
+
+  async function handlePushLedgers() {
+    if (!clientId || !company.trim()) return;
+    setPushingLedgers(true);
+    setPushResult(null);
+    try {
+      const res = await fetch(`${API}/api/v1/tally/push-ledgers/${clientId}`, {
+        method: "POST",
+        headers: { ...authHeader() },
+      });
+      const data = await res.json();
+      if (res.ok) {
+        const detail = data.errors?.length
+          ? `Errors: ${data.errors.map((e: any) => e.ledger).join(", ")}`
+          : undefined;
+        setPushResult({ ok: true, message: data.message, detail });
+      } else {
+        setPushResult({ ok: false, message: data.detail || "Failed to push ledgers" });
+      }
+    } catch (e: any) {
+      setPushResult({ ok: false, message: e?.message || "Could not reach server" });
+    } finally {
+      setPushingLedgers(false);
     }
   }
 
@@ -375,6 +402,46 @@ function TallySettingsInner() {
             </button>
           </div>
         </div>
+
+        {/* Push Ledgers card */}
+        {clientId && (
+          <div style={{ background: "#ffffff", border: "1px solid #ebebeb", borderRadius: "12px", boxShadow: "0 1px 3px rgba(0,0,0,0.06)", overflow: "hidden" }}>
+            <div style={{ padding: "14px 20px", borderBottom: "1px solid #ebebeb", display: "flex", alignItems: "center", gap: "10px" }}>
+              <Database size={14} color="#5266eb" />
+              <span style={{ fontSize: "13px", fontWeight: 600, color: "#0a0a0a" }}>Push Ledgers to Tally</span>
+            </div>
+            <div style={{ padding: "16px 24px 20px", display: "flex", flexDirection: "column", gap: "14px" }}>
+              <p style={{ fontSize: "12px", color: "#737373", margin: 0, lineHeight: "1.5" }}>
+                Push all active ledgers from your chart of accounts into Tally as masters.
+                Existing ledgers are skipped safely — only new ones are created.
+              </p>
+              {pushResult && (
+                <div style={{ display: "flex", alignItems: "flex-start", gap: "10px", padding: "12px 14px", background: pushResult.ok ? "#d1fae5" : "#fef2f2", border: `1px solid ${pushResult.ok ? "#6ee7b7" : "#fca5a5"}`, borderRadius: "8px" }}>
+                  {pushResult.ok
+                    ? <CheckCircle size={14} color="#059669" style={{ flexShrink: 0, marginTop: "1px" }} />
+                    : <AlertCircle size={14} color="#dc2626" style={{ flexShrink: 0, marginTop: "1px" }} />
+                  }
+                  <div>
+                    <span style={{ fontSize: "12.5px", color: pushResult.ok ? "#059669" : "#dc2626", display: "block" }}>{pushResult.message}</span>
+                    {pushResult.detail && <span style={{ fontSize: "11.5px", color: "#dc2626", display: "block", marginTop: "3px" }}>{pushResult.detail}</span>}
+                  </div>
+                </div>
+              )}
+              <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                <button
+                  onClick={handlePushLedgers}
+                  disabled={pushingLedgers || !company.trim()}
+                  style={{ height: "34px", padding: "0 20px", background: pushingLedgers || !company.trim() ? "#a5b0f5" : "#5266eb", color: "#fff", border: "none", borderRadius: "7px", fontSize: "12.5px", fontWeight: 600, cursor: pushingLedgers || !company.trim() ? "not-allowed" : "pointer", fontFamily: "var(--font-family-sans)", display: "flex", alignItems: "center", gap: "6px" }}
+                  onMouseEnter={e => { if (!pushingLedgers && company.trim()) e.currentTarget.style.background = "#4254d4"; }}
+                  onMouseLeave={e => { if (!pushingLedgers && company.trim()) e.currentTarget.style.background = "#5266eb"; }}
+                >
+                  {pushingLedgers && <Loader2 size={12} style={{ animation: "spin 1s linear infinite" }} />}
+                  {pushingLedgers ? "Pushing…" : "Push Ledgers to Tally"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Help card */}
         <div style={{ background: "#fafafa", border: "1px solid #ebebeb", borderRadius: "10px", padding: "14px 18px" }}>
