@@ -694,7 +694,7 @@ export function regenerateConnectorKey() {
 }// rebuild Fri Nov 13 00:17:13 UTC 2026
 
 // ── Periods ───────────────────────────────────────────────────────────────────
-export interface ChecklistItem {
+export interface PeriodChecklistItem {
   id: string;
   step_number: number;
   item_key: string;
@@ -718,7 +718,7 @@ export interface Period {
   assigned_to?: string;
   closed_at?: string;
   filed_at?: string;
-  checklist: ChecklistItem[];
+  checklist: PeriodChecklistItem[];
 }
 
 export interface CreatePeriodPayload {
@@ -745,7 +745,7 @@ export function tickChecklistItem(
   status: string,
   notes?: string
 ) {
-  return api.patch<ChecklistItem>(
+  return api.patch<PeriodChecklistItem>(
     `/api/v1/periods/${periodId}/checklist/${itemKey}`,
     { status, notes }
   );

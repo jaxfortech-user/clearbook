@@ -15,7 +15,7 @@ import {
   getClientById, getClientDocuments, getClientVouchers,
   approveVoucher, updateTallyMapping, testTallyConnection,
   getPeriods, createPeriod, tickChecklistItem,
-  type Client, type Document, type Voucher, type Period, type ChecklistItem
+  type Client, type Document, type Voucher, type Period, type PeriodChecklistItem
 } from "@/lib/api";
 
 type Tab = "overview" | "documents" | "vouchers" | "tally" | "periods";
@@ -166,6 +166,36 @@ function ClientDetailInner() {
     } catch {
       setVouchers(prev => prev.map(v => v.id === vid ? { ...v, status: "approved" as const } : v));
     }
+  }
+
+  async function handleCreatePeriod() {
+    if (!newPeriodStart || !newPeriodEnd) return;
+    setNewPeriodSaving(true);
+    try {
+      const p = await createPeriod({
+        client_id: id,
+        period_start: newPeriodStart,
+        period_end: newPeriodEnd,
+        label: newPeriodLabel || undefined,
+        is_vat_period: newPeriodVat,
+      });
+      setPeriods((prev: any[]) => [p, ...prev]);
+      setShowNewPeriod(false);
+      setNewPeriodStart(""); setNewPeriodEnd(""); setNewPeriodLabel(""); setNewPeriodVat(false);
+    } catch { /* ignore */ }
+    finally { setNewPeriodSaving(false); }
+  }
+
+  async function handleTickItem(periodId: string, itemKey: string, currentStatus: string) {
+    const nextStatus = currentStatus === "COMPLETE" ? "PENDING" : "COMPLETE";
+    try {
+      const updated = await tickChecklistItem(periodId, itemKey, nextStatus) as PeriodChecklistItem;
+      setPeriods((prev: any[]) => prev.map((p: any) =>
+        p.id === periodId
+          ? { ...p, checklist: p.checklist.map((i: PeriodChecklistItem) => i.item_key === itemKey ? { ...i, ...updated } : i) }
+          : p
+      ));
+    } catch { /* ignore */ }
   }
 
   const tabs: { key: Tab; label: string; icon: React.ReactNode }[] = [
@@ -746,8 +776,8 @@ function ClientDetailInner() {
                               {phaseLabels[phase]}
                             </div>
                             {items.map(item => {
-                              const isNA = item.status === "NOT_APPLICABLE";
-                              const isDone = item.status === "COMPLETE";
+                              const isNA = (item.status as string) === "NOT_APPLICABLE";
+                              const isDone = (item.status as string) === "COMPLETE";
                               return (
                                 <div key={item.id} style={{ display: "flex", alignItems: "flex-start", gap: "10px", padding: "9px 16px", borderBottom: "1px solid #f5f5f5", opacity: isNA ? 0.45 : 1 }}>
                                   <input type="checkbox" checked={isDone} disabled={isNA}
