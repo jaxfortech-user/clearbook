@@ -15,10 +15,11 @@ import {
   getClientById, getClientDocuments, getClientVouchers,
   approveVoucher, updateTallyMapping, testTallyConnection,
   getPeriods, createPeriod, tickChecklistItem, getVatReturn, updateVatReturn,
-  type Client, type Document, type Voucher, type Period, type PeriodChecklistItem, type VATReturn
+  getLedgers, createLedger, updateLedger, deleteLedger, getOutstanding, settleVoucher,
+  type Client, type Document, type Voucher, type Period, type PeriodChecklistItem, type VATReturn, type Ledger, type OutstandingVoucher
 } from "@/lib/api";
 
-type Tab = "overview" | "documents" | "vouchers" | "tally" | "periods";
+type Tab = "overview" | "documents" | "vouchers" | "tally" | "periods" | "ledgers" | "outstanding";
 
 const statusVariant: Record<string, "success" | "warning" | "default"> = {
   active: "success", pending: "warning", inactive: "default",
@@ -69,6 +70,15 @@ function ClientDetailInner() {
   const [newPeriodSaving, setNewPeriodSaving] = useState(false);
   const [vatReturns, setVatReturns] = useState<Record<string, VATReturn>>({});
   const [vatSaving, setVatSaving] = useState(false);
+  const [ledgers, setLedgers] = useState<Ledger[]>([]);
+  const [ledgersLoading, setLedgersLoading] = useState(false);
+  const [editingLedger, setEditingLedger] = useState<Ledger | null>(null);
+  const [showAddLedger, setShowAddLedger] = useState(false);
+  const [newLedger, setNewLedger] = useState({ name: "", tally_name: "", group: "" });
+  const [outstanding, setOutstanding] = useState<OutstandingVoucher[]>([]);
+  const [outstandingLoading, setOutstandingLoading] = useState(false);
+  const [settlingId, setSettlingId] = useState<string | null>(null);
+  const [settleRef, setSettleRef] = useState("");
   const [client, setClient] = useState<Client | null>(null);
   const [documents, setDocuments] = useState<Document[]>([]);
   const [vouchers, setVouchers] = useState<Voucher[]>([]);
@@ -186,6 +196,38 @@ function ClientDetailInner() {
       setNewPeriodStart(""); setNewPeriodEnd(""); setNewPeriodLabel(""); setNewPeriodVat(false);
     } catch { /* ignore */ }
     finally { setNewPeriodSaving(false); }
+  }
+
+  async function loadLedgers() {
+    setLedgersLoading(true);
+    try { setLedgers(await getLedgers()); } catch {} finally { setLedgersLoading(false); }
+  }
+
+  async function loadOutstanding() {
+    if (!client) return;
+    setOutstandingLoading(true);
+    try { setOutstanding(await getOutstanding(client.id)); } catch {} finally { setOutstandingLoading(false); }
+  }
+
+  async function handleAddLedger() {
+    if (!newLedger.name || !newLedger.tally_name) return;
+    const l = await createLedger(newLedger);
+    setLedgers(prev => [...prev, l]);
+    setShowAddLedger(false);
+    setNewLedger({ name: "", tally_name: "", group: "" });
+  }
+
+  async function handleDeleteLedger(id: string) {
+    await deleteLedger(id);
+    setLedgers(prev => prev.filter(l => l.id !== id));
+  }
+
+  async function handleSettle(v: OutstandingVoucher) {
+    if (!settleRef.trim()) return;
+    await settleVoucher(v.id, { settled_ref: settleRef });
+    setOutstanding(prev => prev.filter(x => x.id !== v.id));
+    setSettlingId(null);
+    setSettleRef("");
   }
 
   async function loadVatReturn(period: Period) {
