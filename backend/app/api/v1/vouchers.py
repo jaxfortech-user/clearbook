@@ -745,15 +745,14 @@ class ManualVoucherReq(BaseModel):
 async def create_manual_voucher(
     client_id: str,
     req: ManualVoucherReq,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_user)
 ):
     from datetime import date
-    from app.models.client import Client as ClientModel
-    client = db.query(ClientModel).filter(
-        ClientModel.id == client_id,
-        ClientModel.tenant_id == current_user.tenant_id
-    ).first()
+    result = await db.execute(
+        select(Client).where(Client.id == client_id, Client.tenant_id == current_user.tenant_id)
+    )
+    client = result.scalar_one_or_none()
     if not client:
         raise HTTPException(status_code=404, detail="Client not found")
     debits = sum(i.amount for i in req.line_items if i.type == "debit")
@@ -779,22 +778,25 @@ async def create_manual_voucher(
         is_recurring=bool(req.template_name),
     )
     db.add(v)
-    db.commit()
-    db.refresh(v)
+    await db.commit()
+    await db.refresh(v)
     return _outstanding_dict(v)
 
 
 @router.get("/templates/{client_id}")
 async def list_voucher_templates(
     client_id: str,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_user)
 ):
-    templates = db.query(Voucher).filter(
-        Voucher.tenant_id == current_user.tenant_id,
-        Voucher.client_id == client_id,
-        Voucher.is_recurring == True
-    ).order_by(Voucher.created_at.desc()).all()
+    result = await db.execute(
+        select(Voucher).where(
+            Voucher.tenant_id == current_user.tenant_id,
+            Voucher.client_id == client_id,
+            Voucher.is_recurring == True
+        ).order_by(Voucher.created_at.desc())
+    )
+    templates = result.scalars().all()
     return [_outstanding_dict(t) for t in templates]
 
 
@@ -803,15 +805,18 @@ async def create_from_template(
     voucher_id: str,
     new_date: str,
     new_ref: str = "",
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_user)
 ):
     from datetime import date
-    tpl = db.query(Voucher).filter(
-        Voucher.id == voucher_id,
-        Voucher.tenant_id == current_user.tenant_id,
-        Voucher.is_recurring == True
-    ).first()
+    result = await db.execute(
+        select(Voucher).where(
+            Voucher.id == voucher_id,
+            Voucher.tenant_id == current_user.tenant_id,
+            Voucher.is_recurring == True
+        )
+    )
+    tpl = result.scalar_one_or_none()
     if not tpl:
         raise HTTPException(status_code=404, detail="Template not found")
     v = Voucher(
@@ -830,6 +835,6 @@ async def create_from_template(
         is_recurring=False,
     )
     db.add(v)
-    db.commit()
-    db.refresh(v)
+    await db.commit()
+    await db.refresh(v)
     return _outstanding_dict(v)
