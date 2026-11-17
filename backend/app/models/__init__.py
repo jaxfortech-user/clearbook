@@ -6,4 +6,5 @@ from app.models.voucher import Voucher
 from app.models.audit_log import AuditLog
 from app.models.ledger import Ledger
 from app.models.bank_reconciliation import BankReconciliation, BankTransaction  # NEW
-from app.models.checklist import ChecklistState, ChecklistItem                  # NEW
+from app.models.checklist import ChecklistState, ChecklistItem
+from app.models.client_period import ClientPeriod, PeriodChecklistItem, VATReturn

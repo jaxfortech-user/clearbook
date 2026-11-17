@@ -13,6 +13,7 @@ from app.api.v1.bank_reconciliation import router as bank_rec_router
 from app.api.v1.checklist import router as checklist_router
 from app.api.v1.tenants import router as tenants_router
 from app.api.v1.ledgers import router as ledgers_router
+from app.api.v1.periods import router as periods_router
 
 api_router = APIRouter(prefix="/api/v1")
 api_router.include_router(auth_router)
@@ -29,3 +30,7 @@ api_router.include_router(bank_rec_router,      prefix="/bank-reconciliation", t
 api_router.include_router(checklist_router,     prefix="/checklist",           tags=["checklists"])
 api_router.include_router(tenants_router,       prefix="/tenants",             tags=["tenants"])
 api_router.include_router(ledgers_router,       prefix="/ledgers",             tags=["ledgers"])
+# ── Periods — 6-phase CA monthly workflow ─────────────────────────────────────
+api_router.include_router(
+    periods_router, prefix="/periods", tags=["periods"]
+)
