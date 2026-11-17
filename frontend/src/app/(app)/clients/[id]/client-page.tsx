@@ -1,4 +1,5 @@
-"use client";
+"use client"
+import ManualVoucherModal from "@/components/ManualVoucherModal";
 
 import { Suspense } from "react";
 import { useEffect, useState } from "react";
@@ -62,7 +63,8 @@ function ClientDetailInner() {
   const [periods, setPeriods] = useState<Period[]>([]);
   const [periodsLoading, setPeriodsLoading] = useState(false);
   const [expandedPeriod, setExpandedPeriod] = useState<string | null>(null);
-  const [showNewPeriod, setShowNewPeriod] = useState(false);
+  const [showNewPeriod, setShowNewPeriod] = useState(false)
+  const [showManualVoucher, setShowManualVoucher] = useState(false);
   const [newPeriodStart, setNewPeriodStart] = useState("");
   const [newPeriodEnd, setNewPeriodEnd] = useState("");
   const [newPeriodLabel, setNewPeriodLabel] = useState("");

@@ -14,7 +14,7 @@ bearer_scheme = HTTPBearer()
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def register(payload: UserCreate, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(User).where(User.email == payload.email))
+    result = await db.execute(select(User).where(User.email == payload.email.lower()))
     if result.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="Email already registered")
     user = User(
@@ -31,7 +31,7 @@ async def register(payload: UserCreate, db: AsyncSession = Depends(get_db)):
 
 @router.post("/login", response_model=TokenResponse)
 async def login(payload: LoginRequest, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(User).where(User.email == payload.email))
+    result = await db.execute(select(User).where(User.email == payload.email.lower()))
     user = result.scalar_one_or_none()
     if not user or not verify_password(payload.password, user.hashed_password):
         raise HTTPException(status_code=401, detail="Invalid email or password")

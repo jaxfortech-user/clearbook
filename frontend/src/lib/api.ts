@@ -783,3 +783,41 @@ export function getVatReturn(periodId: string) {
 export function updateVatReturn(periodId: string, payload: Record<string, number>) {
   return api.patch<VATReturn>(`/api/v1/periods/${periodId}/vat`, payload);
 }
+
+// ── Manual voucher types ──────────────────────────────────────────────────────
+export interface ManualVoucherRequest {
+  voucher_type: string
+  voucher_number: string
+  voucher_date: string
+  narration?: string
+  line_items: { ledger: string; type: string; amount: number; is_party?: boolean }[]
+  bill_ref?: string
+  bill_party?: string
+  template_name?: string
+}
+
+export async function createManualVoucher(clientId: string, data: ManualVoucherRequest) {
+  const res = await fetchWithAuth(`/api/v1/vouchers/manual/${clientId}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.detail || "Failed to create voucher")
+  }
+  return res.json()
+}
+
+export async function listVoucherTemplates(clientId: string) {
+  const res = await fetchWithAuth(`/api/v1/vouchers/templates/${clientId}`)
+  if (!res.ok) throw new Error("Failed to load templates")
+  return res.json()
+}
+
+export async function createFromTemplate(templateId: string, newDate: string, newRef?: string) {
+  const params = new URLSearchParams({ new_date: newDate, ...(newRef ? { new_ref: newRef } : {}) })
+  const res = await fetchWithAuth(`/api/v1/vouchers/from-template/${templateId}?${params}`, { method: "POST" })
+  if (!res.ok) throw new Error("Failed to create from template")
+  return res.json()
+}

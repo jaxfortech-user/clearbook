@@ -50,7 +50,7 @@ async def route_tally_xml(client: Client, xml_payload: str) -> str:
         logger.info("[TallyRoute] Via tunnel: client=%s", client_id)
         return await tunnel_manager.send_and_wait(tenant_id, client_id, xml_payload)
 
-    if settings.ENV == "development" or getattr(client, "tally_direct_mode", False):
+    if settings.DEBUG or getattr(client, "tally_direct_mode", False):
         logger.info(
             "[TallyRoute] Via direct HTTP: %s:%s", client.tally_host, client.tally_port
         )

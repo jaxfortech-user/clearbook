@@ -1,6 +1,7 @@
 import uuid
 from datetime import datetime, date
-from sqlalchemy import String, DateTime, Date, Numeric, Text, ForeignKey, JSON
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import String, DateTime, Date, Numeric, Text, ForeignKey, JSON, Boolean
 from sqlalchemy.orm import Mapped, mapped_column
 from app.core.database import Base
 
@@ -29,5 +30,13 @@ class Voucher(Base):
     rejection_reason: Mapped[str] = mapped_column(Text, nullable=True)
     tally_voucher_id: Mapped[str] = mapped_column(String(100), nullable=True)
     tally_company: Mapped[str] = mapped_column(String(255), nullable=True)
+    line_items: Mapped[dict] = mapped_column(JSONB, nullable=True)
+    bill_ref: Mapped[str] = mapped_column(String(255), nullable=True)
+    bill_party: Mapped[str] = mapped_column(String(255), nullable=True)
+    is_recurring: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    template_name: Mapped[str] = mapped_column(String(255), nullable=True)
+    is_settled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    settled_ref: Mapped[str] = mapped_column(String(255), nullable=True)
+    settled_date: Mapped[date] = mapped_column(Date, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

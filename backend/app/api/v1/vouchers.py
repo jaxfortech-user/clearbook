@@ -401,10 +401,19 @@ async def _post_to_tally_sync(v: Voucher, company: str, host: str, port: int, ed
             return {"success": False, "error": "No ledger entries on this voucher."}
 
         voucher_date = v.voucher_date.replace(day=1) if edu_mode else v.voucher_date
-        xml = _build_voucher_xml(
-            company=company, voucher_type=v.voucher_type, date=voucher_date,
-            narration=v.narration or "", entries=entries,
-        )
+        # Route by voucher type when line_items present (Payment/Receipt/Journal/Contra)
+        _vt = (v.voucher_type or "").lower()
+        if v.line_items and _vt in ("payment", "receipt"):
+            xml = _make_payment_xml(v, company)
+        elif v.line_items and _vt == "journal":
+            xml = _make_journal_xml(v, company)
+        elif v.line_items and _vt == "contra":
+            xml = _make_contra_xml(v, company)
+        else:
+            xml = _build_voucher_xml(
+                company=company, voucher_type=v.voucher_type, date=voucher_date,
+                narration=v.narration or "", entries=entries,
+            )
 
         await _ensure_ledgers_via_tunnel(company, client_obj if client_obj else type('C', (), {'tally_host': host, 'tally_port': port, 'tenant_id': None, 'id': v.client_id, 'name': company, 'tally_direct_mode': False})(), entries, v.voucher_type or "payment")
 
@@ -420,7 +429,6 @@ async def _post_to_tally_sync(v: Voucher, company: str, host: str, port: int, ed
             client_obj = _TallyClient(host, port, v.client_id)
 
         response_text = await route_tally_xml(client_obj, xml)
-        print(f"[TALLY DEBUG] company={company} response={response_text[:800]}", flush=True)
 
         if "LINEERROR" in response_text or "IMPORTERROR" in response_text:
             return {"success": False, "error": response_text}
@@ -526,3 +534,302 @@ async def submit_voucher(
     await db.commit()
     await db.refresh(voucher)
     return {"id": voucher.id, "status": voucher.status}
+
+
+# ── Outstanding (bill-by-bill) ─────────────────────────────────────────────
+
+class SettleRequest(BaseModel):
+    settled_ref: str
+    settled_date: Optional[str] = None
+
+
+def _outstanding_dict(v: Voucher):
+    return {
+        "id": v.id,
+        "voucher_type": v.voucher_type,
+        "voucher_number": v.voucher_number,
+        "voucher_date": v.voucher_date.isoformat() if v.voucher_date else None,
+        "party_name": v.party_name,
+        "amount": float(v.amount or 0),
+        "tax_amount": float(v.tax_amount or 0),
+        "narration": v.narration,
+        "status": v.status,
+        "is_settled": v.is_settled,
+        "settled_ref": v.settled_ref,
+        "settled_date": v.settled_date.isoformat() if v.settled_date else None,
+    }
+
+
+@router.get("/outstanding/{client_id}")
+async def get_outstanding(
+    client_id: str,
+    include_settled: bool = False,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Return purchase + sales invoices for a client, unsettled by default."""
+    tid = tenant_filter(user)
+    invoice_types = ["Purchase", "Sales", "purchase_invoice", "sales_invoice"]
+    q = select(Voucher).where(
+        Voucher.client_id == client_id,
+        Voucher.voucher_type.in_(invoice_types),
+    )
+    if tid:
+        q = q.where(Voucher.tenant_id == tid)
+    if not include_settled:
+        q = q.where(Voucher.is_settled == False)
+    result = await db.execute(q.order_by(Voucher.voucher_date))
+    return [_outstanding_dict(v) for v in result.scalars().all()]
+
+
+@router.post("/{voucher_id}/settle")
+async def settle_voucher(
+    voucher_id: str,
+    req: SettleRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Mark a voucher as settled (payment received/made)."""
+    result = await db.execute(select(Voucher).filter(Voucher.id == voucher_id))
+    voucher = result.scalar_one_or_none()
+    if not voucher:
+        raise HTTPException(404, "Voucher not found")
+    tid = tenant_filter(user)
+    if tid and voucher.tenant_id != tid:
+        raise HTTPException(403, "Access denied")
+    voucher.is_settled = True
+    voucher.settled_ref = req.settled_ref
+    voucher.settled_date = (
+        date.fromisoformat(req.settled_date) if req.settled_date
+        else datetime.utcnow().date()
+    )
+    voucher.updated_at = datetime.utcnow()
+    await db.commit()
+    return _outstanding_dict(voucher)
+
+
+# ── Tally XML builders for Payment / Receipt / Journal / Contra ──────────────
+
+def _tally_date(d) -> str:
+    from datetime import date as _d
+    if isinstance(d, _d):
+        return d.strftime("%Y%m%d")
+    return str(d).replace("-", "") if d else ""
+
+
+def _make_payment_xml(v, company: str) -> str:
+    items = v.line_items or []
+    lines_xml = ""
+    for item in items:
+        ledger = item.get("ledger", "")
+        amount = float(item.get("amount", 0))
+        typ = item.get("type", "debit")
+        is_positive = "Yes" if typ == "debit" else "No"
+        tally_amount = -amount if typ == "debit" else amount
+        bill_xml = ""
+        if v.bill_ref and item.get("is_party"):
+            bill_xml = f"""
+              <BILLALLOCATIONS.LIST>
+                <NAME>{v.bill_ref}</NAME>
+                <BILLTYPE>Agst Ref</BILLTYPE>
+                <AMOUNT>{tally_amount:.2f}</AMOUNT>
+              </BILLALLOCATIONS.LIST>"""
+        lines_xml += f"""
+            <ALLLEDGERENTRIES.LIST>
+              <LEDGERNAME>{ledger}</LEDGERNAME>
+              <ISDEEMEDPOSITIVE>{is_positive}</ISDEEMEDPOSITIVE>
+              <AMOUNT>{tally_amount:.2f}</AMOUNT>{bill_xml}
+            </ALLLEDGERENTRIES.LIST>"""
+    vtype = v.voucher_type
+    return f"""<ENVELOPE><HEADER><TALLYREQUEST>Import Data</TALLYREQUEST></HEADER>
+  <BODY><IMPORTDATA>
+    <REQUESTDESC><REPORTNAME>Vouchers</REPORTNAME>
+      <STATICVARIABLES><SVCURRENTCOMPANY>{company}</SVCURRENTCOMPANY></STATICVARIABLES>
+    </REQUESTDESC>
+    <REQUESTDATA><TALLYMESSAGE xmlns:UDF="TallyUDF">
+      <VOUCHER VCHTYPE="{vtype}" ACTION="Create" OBJVIEW="Accounting Voucher View">
+        <DATE>{_tally_date(v.voucher_date)}</DATE>
+        <VOUCHERTYPENAME>{vtype}</VOUCHERTYPENAME>
+        <VOUCHERNUMBER>{v.voucher_number or ""}</VOUCHERNUMBER>
+        <NARRATION>{v.narration or ""}</NARRATION>
+        {lines_xml}
+      </VOUCHER>
+    </TALLYMESSAGE></REQUESTDATA>
+  </IMPORTDATA></BODY></ENVELOPE>"""
+
+
+def _make_journal_xml(v, company: str) -> str:
+    items = v.line_items or []
+    lines_xml = ""
+    for item in items:
+        ledger = item.get("ledger", "")
+        amount = float(item.get("amount", 0))
+        typ = item.get("type", "debit")
+        is_positive = "Yes" if typ == "debit" else "No"
+        tally_amount = -amount if typ == "debit" else amount
+        lines_xml += f"""
+            <ALLLEDGERENTRIES.LIST>
+              <LEDGERNAME>{ledger}</LEDGERNAME>
+              <ISDEEMEDPOSITIVE>{is_positive}</ISDEEMEDPOSITIVE>
+              <AMOUNT>{tally_amount:.2f}</AMOUNT>
+            </ALLLEDGERENTRIES.LIST>"""
+    return f"""<ENVELOPE><HEADER><TALLYREQUEST>Import Data</TALLYREQUEST></HEADER>
+  <BODY><IMPORTDATA>
+    <REQUESTDESC><REPORTNAME>Vouchers</REPORTNAME>
+      <STATICVARIABLES><SVCURRENTCOMPANY>{company}</SVCURRENTCOMPANY></STATICVARIABLES>
+    </REQUESTDESC>
+    <REQUESTDATA><TALLYMESSAGE xmlns:UDF="TallyUDF">
+      <VOUCHER VCHTYPE="Journal" ACTION="Create" OBJVIEW="Accounting Voucher View">
+        <DATE>{_tally_date(v.voucher_date)}</DATE>
+        <VOUCHERTYPENAME>Journal</VOUCHERTYPENAME>
+        <VOUCHERNUMBER>{v.voucher_number or ""}</VOUCHERNUMBER>
+        <NARRATION>{v.narration or ""}</NARRATION>
+        {lines_xml}
+      </VOUCHER>
+    </TALLYMESSAGE></REQUESTDATA>
+  </IMPORTDATA></BODY></ENVELOPE>"""
+
+
+def _make_contra_xml(v, company: str) -> str:
+    items = v.line_items or []
+    lines_xml = ""
+    for item in items:
+        ledger = item.get("ledger", "")
+        amount = float(item.get("amount", 0))
+        typ = item.get("type", "debit")
+        is_positive = "Yes" if typ == "debit" else "No"
+        tally_amount = -amount if typ == "debit" else amount
+        lines_xml += f"""
+            <ALLLEDGERENTRIES.LIST>
+              <LEDGERNAME>{ledger}</LEDGERNAME>
+              <ISDEEMEDPOSITIVE>{is_positive}</ISDEEMEDPOSITIVE>
+              <AMOUNT>{tally_amount:.2f}</AMOUNT>
+            </ALLLEDGERENTRIES.LIST>"""
+    return f"""<ENVELOPE><HEADER><TALLYREQUEST>Import Data</TALLYREQUEST></HEADER>
+  <BODY><IMPORTDATA>
+    <REQUESTDESC><REPORTNAME>Vouchers</REPORTNAME>
+      <STATICVARIABLES><SVCURRENTCOMPANY>{company}</SVCURRENTCOMPANY></STATICVARIABLES>
+    </REQUESTDESC>
+    <REQUESTDATA><TALLYMESSAGE xmlns:UDF="TallyUDF">
+      <VOUCHER VCHTYPE="Contra" ACTION="Create" OBJVIEW="Accounting Voucher View">
+        <DATE>{_tally_date(v.voucher_date)}</DATE>
+        <VOUCHERTYPENAME>Contra</VOUCHERTYPENAME>
+        <VOUCHERNUMBER>{v.voucher_number or ""}</VOUCHERNUMBER>
+        <NARRATION>{v.narration or ""}</NARRATION>
+        {lines_xml}
+      </VOUCHER>
+    </TALLYMESSAGE></REQUESTDATA>
+  </IMPORTDATA></BODY></ENVELOPE>"""
+
+
+# ── Manual voucher create ─────────────────────────────────────────────────────
+
+class LineItemReq(BaseModel):
+    ledger: str
+    type: str
+    amount: float
+    is_party: bool = False
+
+class ManualVoucherReq(BaseModel):
+    voucher_type: str
+    voucher_number: str
+    voucher_date: str
+    narration: str = ""
+    line_items: list[LineItemReq]
+    bill_ref: str = ""
+    bill_party: str = ""
+    template_name: str = ""
+
+
+@router.post("/manual/{client_id}")
+async def create_manual_voucher(
+    client_id: str,
+    req: ManualVoucherReq,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user)
+):
+    from datetime import date
+    from app.models.client import Client as ClientModel
+    client = db.query(ClientModel).filter(
+        ClientModel.id == client_id,
+        ClientModel.tenant_id == current_user.tenant_id
+    ).first()
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found")
+    debits = sum(i.amount for i in req.line_items if i.type == "debit")
+    credits_ = sum(i.amount for i in req.line_items if i.type == "credit")
+    if abs(debits - credits_) > 0.01:
+        raise HTTPException(status_code=400,
+            detail=f"Does not balance: Dr {debits:.2f} Cr {credits_:.2f}")
+    vdate = date.fromisoformat(req.voucher_date)
+    v = Voucher(
+        tenant_id=current_user.tenant_id,
+        client_id=client_id,
+        voucher_type=req.voucher_type,
+        voucher_number=req.voucher_number,
+        voucher_date=vdate,
+        narration=req.narration,
+        amount=debits,
+        tax_amount=0,
+        status="approved",
+        line_items=[i.dict() for i in req.line_items],
+        bill_ref=req.bill_ref or None,
+        bill_party=req.bill_party or None,
+        template_name=req.template_name or None,
+        is_recurring=bool(req.template_name),
+    )
+    db.add(v)
+    db.commit()
+    db.refresh(v)
+    return _outstanding_dict(v)
+
+
+@router.get("/templates/{client_id}")
+async def list_voucher_templates(
+    client_id: str,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user)
+):
+    templates = db.query(Voucher).filter(
+        Voucher.tenant_id == current_user.tenant_id,
+        Voucher.client_id == client_id,
+        Voucher.is_recurring == True
+    ).order_by(Voucher.created_at.desc()).all()
+    return [_outstanding_dict(t) for t in templates]
+
+
+@router.post("/from-template/{voucher_id}")
+async def create_from_template(
+    voucher_id: str,
+    new_date: str,
+    new_ref: str = "",
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user)
+):
+    from datetime import date
+    tpl = db.query(Voucher).filter(
+        Voucher.id == voucher_id,
+        Voucher.tenant_id == current_user.tenant_id,
+        Voucher.is_recurring == True
+    ).first()
+    if not tpl:
+        raise HTTPException(status_code=404, detail="Template not found")
+    v = Voucher(
+        tenant_id=current_user.tenant_id,
+        client_id=tpl.client_id,
+        voucher_type=tpl.voucher_type,
+        voucher_number=new_ref or tpl.voucher_number,
+        voucher_date=date.fromisoformat(new_date),
+        narration=tpl.narration,
+        amount=tpl.amount,
+        tax_amount=0,
+        status="approved",
+        line_items=tpl.line_items,
+        bill_ref=None,
+        bill_party=None,
+        is_recurring=False,
+    )
+    db.add(v)
+    db.commit()
+    db.refresh(v)
+    return _outstanding_dict(v)
