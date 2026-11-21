@@ -194,7 +194,13 @@ def _post_tally_xml(host: str, port: int, xml_body: str) -> str:
         return response.text
 
 
-def _build_voucher_xml(company, voucher_type, date, narration, entries) -> str:
+def _build_voucher_xml(company, voucher_type, date, narration, entries,
+                       stock_items=None, invoice_subtype=None) -> str:
+    """
+    Build Tally Import XML for a voucher.
+    - stock_items present + invoice_subtype == 'item_invoice' → Item Invoice view with inventory lines
+    - Otherwise → standard Accounting Voucher view
+    """
     tally_date = date.strftime("%Y%m%d")
     vch_type_map = {
         "payment": "Payment", "receipt": "Receipt", "journal": "Journal",
@@ -204,6 +210,11 @@ def _build_voucher_xml(company, voucher_type, date, narration, entries) -> str:
     tally_vch_type = vch_type_map.get((voucher_type or "journal").lower(), "Journal")
     bill_types = {"payment", "receipt"}
     use_bill = tally_vch_type.lower() in bill_types
+    is_item_invoice = (
+        invoice_subtype == "item_invoice"
+        and stock_items
+        and len(stock_items) > 0
+    )
     ledger_xml = ""
     for entry in entries:
         ledger_name = entry.get("ledger_name", "")
@@ -227,7 +238,9 @@ def _build_voucher_xml(company, voucher_type, date, narration, entries) -> str:
             <ISDEEMEDPOSITIVE>{is_deemed_positive}</ISDEEMEDPOSITIVE>
             <AMOUNT>{tally_amount:.2f}</AMOUNT>{bill_xml}
           </ALLLEDGERENTRIES.LIST>"""
-    return f"""<ENVELOPE>
+
+    if not is_item_invoice:
+        return f"""<ENVELOPE>
   <HEADER><TALLYREQUEST>Import Data</TALLYREQUEST></HEADER>
   <BODY><IMPORTDATA>
     <REQUESTDESC>
@@ -241,6 +254,51 @@ def _build_voucher_xml(company, voucher_type, date, narration, entries) -> str:
           <NARRATION>{_xml_escape(narration)}</NARRATION>
           <VOUCHERTYPENAME>{tally_vch_type}</VOUCHERTYPENAME>
           <VOUCHERNUMBER></VOUCHERNUMBER>{ledger_xml}
+        </VOUCHER>
+      </TALLYMESSAGE>
+    </REQUESTDATA>
+  </IMPORTDATA></BODY>
+</ENVELOPE>"""
+
+    # Item Invoice XML — includes inventory allocation lines
+    inventory_xml = ""
+    for item in stock_items:
+        name = _xml_escape(item.get("name") or "Item")
+        qty = float(item.get("quantity") or 0)
+        per = _xml_escape(item.get("per") or item.get("unit") or "Nos")
+        rate = float(item.get("unit_price") or 0)
+        amount = float(item.get("amount") or (qty * rate))
+        inventory_xml += f"""
+          <ALLINVENTORYENTRIES.LIST>
+            <STOCKITEMNAME>{name}</STOCKITEMNAME>
+            <ISDEEMEDPOSITIVE>Yes</ISDEEMEDPOSITIVE>
+            <RATE>{rate:.2f}/{per}</RATE>
+            <AMOUNT>-{amount:.2f}</AMOUNT>
+            <ACTUALQTY>{qty:.2f} {per}</ACTUALQTY>
+            <BILLEDQTY>{qty:.2f} {per}</BILLEDQTY>
+            <BATCHALLOCATIONS.LIST>
+              <GODOWNNAME>Main Location</GODOWNNAME>
+              <BATCHNAME>Primary Batch</BATCHNAME>
+              <AMOUNT>-{amount:.2f}</AMOUNT>
+              <ACTUALQTY>{qty:.2f} {per}</ACTUALQTY>
+              <BILLEDQTY>{qty:.2f} {per}</BILLEDQTY>
+            </BATCHALLOCATIONS.LIST>
+          </ALLINVENTORYENTRIES.LIST>"""
+
+    return f"""<ENVELOPE>
+  <HEADER><TALLYREQUEST>Import Data</TALLYREQUEST></HEADER>
+  <BODY><IMPORTDATA>
+    <REQUESTDESC>
+      <REPORTNAME>Vouchers</REPORTNAME>
+      <STATICVARIABLES><SVCURRENTCOMPANY>{_xml_escape(company)}</SVCURRENTCOMPANY></STATICVARIABLES>
+    </REQUESTDESC>
+    <REQUESTDATA>
+      <TALLYMESSAGE xmlns:UDF="TallyUDF">
+        <VOUCHER VCHTYPE="{tally_vch_type}" ACTION="Create" OBJVIEW="Item Invoice View">
+          <DATE>{tally_date}</DATE>
+          <NARRATION>{_xml_escape(narration)}</NARRATION>
+          <VOUCHERTYPENAME>{tally_vch_type}</VOUCHERTYPENAME>
+          <VOUCHERNUMBER></VOUCHERNUMBER>{ledger_xml}{inventory_xml}
         </VOUCHER>
       </TALLYMESSAGE>
     </REQUESTDATA>

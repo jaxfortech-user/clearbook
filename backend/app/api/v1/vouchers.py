@@ -400,7 +400,10 @@ async def _post_to_tally_sync(v: Voucher, company: str, host: str, port: int, ed
         if not entries:
             return {"success": False, "error": "No ledger entries on this voucher."}
 
+        stock_items = _normalize_entries(v.stock_items) if getattr(v, "stock_items", None) else []
+        invoice_subtype = getattr(v, "invoice_subtype", None) or "accounting_invoice"
         voucher_date = v.voucher_date.replace(day=1) if edu_mode else v.voucher_date
+
         # Route by voucher type when line_items present (Payment/Receipt/Journal/Contra)
         _vt = (v.voucher_type or "").lower()
         if v.line_items and _vt in ("payment", "receipt"):
@@ -413,6 +416,7 @@ async def _post_to_tally_sync(v: Voucher, company: str, host: str, port: int, ed
             xml = _build_voucher_xml(
                 company=company, voucher_type=v.voucher_type, date=voucher_date,
                 narration=v.narration or "", entries=entries,
+                stock_items=stock_items, invoice_subtype=invoice_subtype,
             )
 
         await _ensure_ledgers_via_tunnel(company, client_obj if client_obj else type('C', (), {'tally_host': host, 'tally_port': port, 'tenant_id': None, 'id': v.client_id, 'name': company, 'tally_direct_mode': False})(), entries, v.voucher_type or "payment")
@@ -500,6 +504,10 @@ def _voucher_to_dict(v: Voucher) -> dict:
         "amount": float(v.amount) if v.amount else 0,
         "tax_amount": float(v.tax_amount) if v.tax_amount else 0,
         "currency": getattr(v, "currency", "AED"),
+        "invoice_subtype": getattr(v, "invoice_subtype", None) or "accounting_invoice",
+        "stock_items": getattr(v, "stock_items", None) or [],
+        "dispatch_details": getattr(v, "dispatch_details", None),
+        "party_address": getattr(v, "party_address", None),
         "ai_suggested_data": {"entries": v.ledger_entries or [], "voucher_type": v.voucher_type, "narration": v.narration},
         "ledger_entries": v.ledger_entries or [],
         "approved_entries": getattr(v, "approved_entries", None),

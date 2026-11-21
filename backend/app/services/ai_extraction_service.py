@@ -12,32 +12,40 @@ EXTRACTION_PROMPT = """You are a precise UAE accounting document extractor. Alwa
 Extract structured data from this document. Return a JSON object with ALL of these fields (use null if not found):
 {
     "document_type": "purchase_invoice|sales_invoice|receipt|bank_statement|purchase_order|credit_note|debit_note|petty_cash|delivery_note|other",
+    "invoice_subtype": "item_invoice|accounting_invoice",
     "is_handwritten": false,
     "language": "english|arabic|mixed",
     "vendor_name": "string or null",
     "vendor_trn": "15-digit UAE TRN or null",
+    "vendor_address": "string or null",
     "buyer_name": "string or null",
     "buyer_trn": "15-digit UAE TRN or null",
+    "buyer_address": "string or null",
     "document_number": "invoice/receipt number or null",
     "invoice_number": "same as document_number for compatibility",
     "document_date": "YYYY-MM-DD or null",
     "invoice_date": "same as document_date for compatibility",
     "due_date": "YYYY-MM-DD or null",
+    "delivery_note_number": "string or null",
+    "dispatch_details": "string or null",
     "subtotal": numeric or null,
     "vat_amount": numeric or null,
-    "vat_rate": numeric percentage or null,
+    "vat_rate": numeric percentage (e.g. 5 for 5%) or null,
     "total_amount": numeric or null,
     "currency": "AED|USD|EUR etc",
     "line_items": [
         {
-            "description": "string",
+            "description": "item or service name",
             "quantity": numeric or null,
+            "unit": "pcs|kg|hrs|nos|box|set or null",
             "unit_price": numeric or null,
-            "vat_rate": numeric or null,
+            "per": "unit label as printed on invoice e.g. Nos, Pcs, KG or null",
+            "vat_rate": numeric percentage or null,
             "amount": numeric or null
         }
     ],
     "payment_method": "cash|bank_transfer|cheque|card or null",
+    "bank_account": "bank name or account reference if mentioned or null",
     "notes": "any other relevant information or null",
     "confidence_scores": {
         "vendor_name": 0.95,
@@ -52,9 +60,14 @@ Extract structured data from this document. Return a JSON object with ALL of the
 
 RULES:
 - document_type MUST be one of the values listed above
+- invoice_subtype: use "item_invoice" if the invoice has physical goods with quantity/rate/unit columns;
+  use "accounting_invoice" if it's a service or single-amount billing (no stock items)
 - is_handwritten: true if any part of the document is handwritten
 - overall_confidence: weighted average 0.0-1.0 (be honest - penalise blurry, handwritten, partial docs)
 - For Arabic handwriting, overall_confidence should rarely exceed 0.75
+- line_items: extract EVERY line item shown on the invoice, including services; never skip any line
+- For item invoices: always capture quantity, unit_price, per, and amount for each line
+- vat_rate: extract the actual percentage shown (e.g. 5 for UAE VAT, not 0.05)
 - Null for missing fields, never empty string
 """
 
@@ -175,73 +188,167 @@ def _pdf_to_image(pdf_path: str) -> tuple[bytes, str]:
 # -- Voucher suggestion (called by POST /documents/{id}/create-voucher) -------
 
 def suggest_voucher_entries(extracted_data: dict) -> dict:
-    """Rule-based ledger mapping from extracted document data."""
+    """
+    Build complete voucher suggestion from extracted document data.
+    - Detects item vs accounting invoice automatically
+    - Populates stock_items for item invoices
+    - Always adds VAT as a named ledger line when present
+    - Returns ledger entries balanced to zero
+    """
     doc_type = extracted_data.get("document_type", "other")
+    invoice_subtype = extracted_data.get("invoice_subtype") or "accounting_invoice"
     total = float(extracted_data.get("total_amount") or 0)
-    subtotal = float(extracted_data.get("subtotal") or 0)
+    subtotal = float(extracted_data.get("subtotal") or total)
     vat_amount = float(extracted_data.get("vat_amount") or 0)
+    vat_rate = extracted_data.get("vat_rate")
     vendor = extracted_data.get("vendor_name") or "Supplier"
     buyer = extracted_data.get("buyer_name") or "Customer"
     currency = extracted_data.get("currency") or "AED"
     narration = _build_narration(extracted_data)
+    line_items = extracted_data.get("line_items") or []
+
+    # Recalculate subtotal from line items if more accurate
+    if line_items:
+        computed_subtotal = sum(float(li.get("amount") or 0) for li in line_items)
+        if computed_subtotal > 0:
+            subtotal = computed_subtotal
+
+    # Build stock_items (for item invoices with physical goods)
+    has_stock_items = (
+        invoice_subtype == "item_invoice"
+        and any(li.get("quantity") for li in line_items)
+    )
+    stock_items = []
+    if has_stock_items:
+        for li in line_items:
+            qty = li.get("quantity")
+            if qty is None:
+                continue
+            stock_items.append({
+                "name": li.get("description") or "Item",
+                "quantity": float(qty),
+                "unit": li.get("unit") or li.get("per") or "Nos",
+                "unit_price": float(li.get("unit_price") or 0),
+                "per": li.get("per") or li.get("unit") or "Nos",
+                "amount": float(li.get("amount") or 0),
+                "vat_rate": float(li.get("vat_rate") or vat_rate or 0),
+            })
+
+    # VAT ledger name with rate if known
+    vat_label_in = f"Input VAT {vat_rate}%" if vat_rate else "Input VAT"
+    vat_label_out = f"Output VAT {vat_rate}%" if vat_rate else "Output VAT"
 
     if doc_type in ["purchase_invoice", "receipt"]:
+        entries = []
+        if has_stock_items:
+            # Each stock item maps to its own purchase ledger line
+            for item in stock_items:
+                entries.append({
+                    "ledger_name": "Purchase Account",
+                    "is_debit": True,
+                    "amount": round(item["amount"], 2),
+                    "notes": f"{item['name']} – {item['quantity']} {item['per']} @ {item['unit_price']}",
+                })
+        else:
+            entries.append({
+                "ledger_name": "Purchase Account",
+                "is_debit": True,
+                "amount": round(subtotal, 2),
+                "notes": "Purchase/expense (excl VAT)",
+            })
+        if vat_amount > 0:
+            entries.append({
+                "ledger_name": vat_label_in,
+                "is_debit": True,
+                "amount": round(vat_amount, 2),
+                "notes": f"Input VAT recoverable",
+            })
+        entries.append({
+            "ledger_name": vendor,
+            "is_debit": False,
+            "amount": round(total, 2),
+            "notes": "Supplier payable",
+        })
         return {
             "voucher_type": "Purchase",
+            "invoice_subtype": invoice_subtype,
             "narration": narration,
             "currency": currency,
             "total_amount": total,
-            "entries": [
-                {"ledger_name": "Purchase Account", "is_debit": True, "amount": subtotal, "notes": "Purchase/expense (excl VAT)"},
-                {"ledger_name": "Input VAT", "is_debit": True, "amount": vat_amount, "notes": "5% input VAT - recoverable"},
-                {"ledger_name": vendor, "is_debit": False, "amount": total, "notes": "Supplier payable"},
-            ],
+            "stock_items": stock_items,
+            "entries": entries,
         }
+
     elif doc_type == "sales_invoice":
+        entries = [{"ledger_name": buyer, "is_debit": True, "amount": round(total, 2), "notes": "Customer receivable"}]
+        if has_stock_items:
+            for item in stock_items:
+                entries.append({
+                    "ledger_name": "Sales Account",
+                    "is_debit": False,
+                    "amount": round(item["amount"], 2),
+                    "notes": f"{item['name']} – {item['quantity']} {item['per']} @ {item['unit_price']}",
+                })
+        else:
+            entries.append({"ledger_name": "Sales Account", "is_debit": False, "amount": round(subtotal, 2), "notes": "Revenue"})
+        if vat_amount > 0:
+            entries.append({
+                "ledger_name": vat_label_out,
+                "is_debit": False,
+                "amount": round(vat_amount, 2),
+                "notes": "Output VAT payable to FTA",
+            })
         return {
             "voucher_type": "Sales",
+            "invoice_subtype": invoice_subtype,
             "narration": narration,
             "currency": currency,
             "total_amount": total,
-            "entries": [
-                {"ledger_name": buyer, "is_debit": True, "amount": total, "notes": "Customer receivable"},
-                {"ledger_name": "Sales Account", "is_debit": False, "amount": subtotal, "notes": "Revenue"},
-                {"ledger_name": "Output VAT", "is_debit": False, "amount": vat_amount, "notes": "5% output VAT - payable to FTA"},
-            ],
+            "stock_items": stock_items,
+            "entries": entries,
         }
+
     elif doc_type == "credit_note":
         return {
             "voucher_type": "Credit Note",
+            "invoice_subtype": invoice_subtype,
             "narration": narration,
             "currency": currency,
             "total_amount": total,
+            "stock_items": [],
             "entries": [
-                {"ledger_name": vendor, "is_debit": True, "amount": total, "notes": "Reduce supplier payable"},
-                {"ledger_name": "Purchase Return", "is_debit": False, "amount": subtotal, "notes": "Return"},
-                {"ledger_name": "Input VAT", "is_debit": False, "amount": vat_amount, "notes": "Reverse input VAT"},
+                {"ledger_name": vendor, "is_debit": True, "amount": round(total, 2), "notes": "Reduce supplier payable"},
+                {"ledger_name": "Purchase Return", "is_debit": False, "amount": round(subtotal, 2), "notes": "Return"},
+                {"ledger_name": vat_label_in, "is_debit": False, "amount": round(vat_amount, 2), "notes": "Reverse input VAT"},
             ],
         }
+
     elif doc_type == "petty_cash":
         return {
             "voucher_type": "Payment",
+            "invoice_subtype": "accounting_invoice",
             "narration": narration,
             "currency": currency,
             "total_amount": total,
+            "stock_items": [],
             "entries": [
-                {"ledger_name": "Petty Cash Expenses", "is_debit": True, "amount": subtotal, "notes": "Petty cash expense"},
-                {"ledger_name": "Input VAT", "is_debit": True, "amount": vat_amount, "notes": "Input VAT if applicable"},
-                {"ledger_name": "Petty Cash", "is_debit": False, "amount": total, "notes": "Cash outflow"},
+                {"ledger_name": "Petty Cash Expenses", "is_debit": True, "amount": round(subtotal, 2), "notes": "Petty cash expense"},
+                {"ledger_name": vat_label_in, "is_debit": True, "amount": round(vat_amount, 2), "notes": "Input VAT if applicable"},
+                {"ledger_name": "Petty Cash", "is_debit": False, "amount": round(total, 2), "notes": "Cash outflow"},
             ],
         }
+
     else:
         return {
             "voucher_type": "Journal",
+            "invoice_subtype": "accounting_invoice",
             "narration": narration,
             "currency": currency,
             "total_amount": total,
+            "stock_items": [],
             "entries": [
-                {"ledger_name": "Suspense Account", "is_debit": True, "amount": total, "notes": "Requires manual classification"},
-                {"ledger_name": "Suspense Account", "is_debit": False, "amount": total, "notes": "Requires manual classification"},
+                {"ledger_name": "Suspense Account", "is_debit": True, "amount": round(total, 2), "notes": "Requires manual classification"},
+                {"ledger_name": "Suspense Account", "is_debit": False, "amount": round(total, 2), "notes": "Requires manual classification"},
             ],
         }
 

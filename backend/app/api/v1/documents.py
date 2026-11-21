@@ -314,17 +314,25 @@ async def create_voucher_from_document(
     tid = tenant_filter(user) or "system"
     await _ensure_ledgers(db, tid, suggestion.get("entries", []))
 
+    extracted = doc.extracted_data or {}
     voucher = Voucher(
         id=str(uuid.uuid4()),
         tenant_id=tenant_filter(user) or "system",
         client_id=doc.client_id,
         document_id=doc.id,
         voucher_type=suggestion.get("voucher_type", "journal"),
+        invoice_subtype=suggestion.get("invoice_subtype", "accounting_invoice"),
         narration=suggestion.get("narration", ""),
         amount=float(suggestion.get("total_amount") or 0),
+        tax_amount=float(extracted.get("vat_amount") or 0),
         currency=suggestion.get("currency", "AED"),
-        ledger_entries=suggestion.get("entries", suggestion),
-        voucher_date=date.today(),
+        ledger_entries=suggestion.get("entries", []),
+        stock_items=suggestion.get("stock_items") or [],
+        party_name=extracted.get("vendor_name") or extracted.get("buyer_name"),
+        party_address=extracted.get("vendor_address") or extracted.get("buyer_address"),
+        dispatch_details=extracted.get("dispatch_details"),
+        voucher_date=datetime.strptime(extracted["document_date"], "%Y-%m-%d").date()
+            if extracted.get("document_date") else date.today(),
         status="draft",
     )
     db.add(voucher)
