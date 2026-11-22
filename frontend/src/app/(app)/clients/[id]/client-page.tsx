@@ -493,7 +493,7 @@ function ClientDetailInner() {
                       <td style={{ padding: "12px 20px", fontSize: "13px", color: "#a3a3a3", whiteSpace: "nowrap" }}>
                         {doc.created_at ? new Date(doc.created_at).toLocaleDateString("en-AE", { day: "numeric", month: "short", year: "numeric" }) : doc.uploaded ?? "—"}
                       </td>
-                      <td style={{ padding: "12px 24px 12px 20px", textAlign: "right" }}><Button variant="ghost" size="sm">View</Button></td>
+                      <td style={{ padding: "12px 24px 12px 20px", textAlign: "right" }}><Button variant="ghost" size="sm" onClick={() => router.push(`/documents/${doc.id}`)}>View</Button></td>
                     </tr>
                   ))}
                 </tbody>
@@ -557,7 +557,7 @@ function ClientDetailInner() {
                       <td style={{ padding: "12px 24px 12px 20px", textAlign: "right" }}>
                         {v.status === "pending"
                           ? <Button size="sm" onClick={() => handleApprove(v.id)}>Approve</Button>
-                          : <Button variant="ghost" size="sm">View</Button>
+                          : <Button variant="ghost" size="sm" onClick={() => router.push(`/vouchers/${v.id}`)}>View</Button>
                         }
                       </td>
                     </tr>
