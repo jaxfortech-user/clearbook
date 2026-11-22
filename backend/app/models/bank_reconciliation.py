@@ -15,6 +15,9 @@ class BankReconciliation(Base):
     period_start: Mapped[date] = mapped_column(Date, nullable=False)
     period_end: Mapped[date] = mapped_column(Date, nullable=False)
     bank_account: Mapped[str] = mapped_column(String(255), nullable=False)
+    bank_name: Mapped[str] = mapped_column(String(255), nullable=True)
+    filename: Mapped[str] = mapped_column(String(500), nullable=True)
+    opening_balance: Mapped[Decimal] = mapped_column(Numeric(15, 2), nullable=True)
     statement_balance: Mapped[Decimal] = mapped_column(Numeric(15, 2), default=0)
     closing_balance: Mapped[Decimal] = mapped_column(Numeric(15, 2), default=0)
     status: Mapped[str] = mapped_column(String(20), default="draft")  # draft / in_progress / completed
@@ -36,8 +39,14 @@ class BankTransaction(Base):
     transaction_date: Mapped[date] = mapped_column(Date, nullable=False)
     description: Mapped[str] = mapped_column(String(500), nullable=False)
     amount: Mapped[Decimal] = mapped_column(Numeric(15, 2), nullable=False)
+    debit: Mapped[Decimal] = mapped_column(Numeric(15, 2), default=0, nullable=False)
+    credit: Mapped[Decimal] = mapped_column(Numeric(15, 2), default=0, nullable=False)
+    balance: Mapped[Decimal] = mapped_column(Numeric(15, 2), nullable=True)
+    reference: Mapped[str] = mapped_column(String(255), nullable=True)
     is_matched: Mapped[bool] = mapped_column(Boolean, default=False)
     tally_ref: Mapped[str] = mapped_column(String(255), nullable=True)
+    suggested_voucher_id: Mapped[str] = mapped_column(String(36), nullable=True)
+    suggested_voucher_ref: Mapped[str] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     reconciliation: Mapped["BankReconciliation"] = relationship(

@@ -1,7 +1,7 @@
 """
-Bank reconciliation: upload bank statement CSV → parse → match against vouchers.
+Bank reconciliation: upload bank statement → AI parse → auto-match vouchers → auto-create drafts.
 """
-import csv, io, os, uuid
+import csv, io, os, uuid, tempfile
 from datetime import datetime, date
 from decimal import Decimal
 from typing import Optional
@@ -15,24 +15,37 @@ from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models.client import Client
 from app.models.bank_reconciliation import BankReconciliation, BankTransaction
+from app.models.voucher import Voucher
+from app.services.ai_extraction_service import extract_bank_statement
 
 router = APIRouter()
+
+_MATCH_TOLERANCE_DAYS = 7   # match window for date similarity
+_MATCH_AMOUNT_DIFF    = 0.01  # tolerance for amount match
 
 
 # ── Serialiser ────────────────────────────────────────────────────────────────
 
 def _txn_out(t: BankTransaction) -> dict:
-    amt = float(t.amount or 0)
+    debit  = float(getattr(t, "debit",  None) or 0)
+    credit = float(getattr(t, "credit", None) or 0)
+    # Fallback for rows inserted before the new columns existed
+    if debit == 0 and credit == 0:
+        amt = float(t.amount or 0)
+        if amt >= 0:
+            credit = amt
+        else:
+            debit = abs(amt)
     return {
         "id": t.id,
         "date": t.transaction_date.isoformat() if t.transaction_date else "",
         "description": t.description or "",
-        "debit":  round(abs(amt), 2) if amt < 0 else 0.0,
-        "credit": round(amt, 2)      if amt > 0 else 0.0,
-        "balance": 0.0,              # model has no running balance column
+        "debit":   round(debit,  2),
+        "credit":  round(credit, 2),
+        "balance": float(getattr(t, "balance", None) or 0),
         "matched": bool(t.is_matched),
         "tally_ref": t.tally_ref,
-        "suggested": None,
+        "suggested": getattr(t, "suggested_voucher_ref", None),
     }
 
 
@@ -47,11 +60,23 @@ async def _rec_out(rec: BankReconciliation, db: AsyncSession) -> dict:
     matched = sum(1 for t in out_txns if t["matched"])
     total_credits = sum(t["credit"] for t in out_txns)
     total_debits  = sum(t["debit"]  for t in out_txns)
+
+    # Resolve client name
+    client_name = ""
+    try:
+        cr = await db.execute(select(Client).where(Client.id == rec.client_id))
+        c = cr.scalar_one_or_none()
+        if c:
+            client_name = c.name
+    except Exception:
+        pass
+
     return {
         "id": rec.id,
         "client_id": rec.client_id,
-        "client_name": "",
-        "filename": rec.bank_account or "",
+        "client_name": client_name,
+        "bank_name": getattr(rec, "bank_name", None) or "",
+        "filename": getattr(rec, "filename", None) or rec.bank_account or "",
         "uploaded_at": rec.created_at.isoformat() if rec.created_at else "",
         "status": rec.status,
         "transactions": out_txns,
@@ -61,78 +86,103 @@ async def _rec_out(rec: BankReconciliation, db: AsyncSession) -> dict:
             "unmatched": len(out_txns) - matched,
             "total_credits": round(total_credits, 2),
             "total_debits": round(total_debits, 2),
+            "opening_balance": float(getattr(rec, "opening_balance", None) or 0),
             "closing_balance": float(rec.statement_balance or 0),
         },
     }
 
 
-# ── CSV parser ────────────────────────────────────────────────────────────────
+# ── Auto-match helpers ─────────────────────────────────────────────────────────
 
-def _find_col(fieldnames, candidates):
-    for c in candidates:
-        for h in (fieldnames or []):
-            if c in h.lower():
-                return h
-    return None
+async def _auto_match_and_suggest(
+    txns: list[BankTransaction],
+    client_id: str,
+    tenant_id: str,
+    db: AsyncSession,
+):
+    """
+    For each transaction, look for an existing voucher with matching amount+date.
+    Set suggested_voucher_id/ref.  For strong matches also set is_matched=True.
+    """
+    # Fetch all vouchers for this client
+    result = await db.execute(
+        select(Voucher).where(
+            Voucher.client_id == client_id,
+            Voucher.tenant_id == tenant_id,
+        )
+    )
+    vouchers = result.scalars().all()
+
+    for txn in txns:
+        txn_amount = float(txn.debit or 0) if float(txn.debit or 0) > 0 else float(txn.credit or 0)
+        for v in vouchers:
+            v_amount = abs(float(v.amount or 0))
+            if v_amount == 0:
+                continue
+            if abs(v_amount - txn_amount) > _MATCH_AMOUNT_DIFF * max(v_amount, txn_amount) + 1:
+                continue
+            # Amount roughly matches — check date window
+            if v.voucher_date and txn.transaction_date:
+                delta = abs((v.voucher_date - txn.transaction_date).days)
+                if delta <= _MATCH_TOLERANCE_DAYS:
+                    txn.suggested_voucher_id  = str(v.id)
+                    txn.suggested_voucher_ref = str(v.voucher_number or v.id)
+                    # Exact amount + close date → auto-match
+                    if abs(v_amount - txn_amount) < _MATCH_AMOUNT_DIFF and delta <= 2:
+                        txn.is_matched = True
+                        txn.tally_ref  = str(v.voucher_number or v.id)
+                    break
 
 
-def _parse_date(s: str) -> Optional[date]:
-    for fmt in ("%d/%m/%Y", "%d-%m-%Y", "%Y-%m-%d", "%d %b %Y", "%d-%b-%Y", "%m/%d/%Y", "%d/%m/%y"):
-        try:
-            return datetime.strptime(s.strip(), fmt).date()
-        except ValueError:
+async def _auto_create_vouchers(
+    txns: list[BankTransaction],
+    client_id: str,
+    tenant_id: str,
+    db: AsyncSession,
+):
+    """
+    For unmatched transactions that have no suggestion, auto-create draft
+    Receipt (credit) or Payment (debit) vouchers so the accountant can review.
+    """
+    created = 0
+    for txn in txns:
+        if txn.is_matched or txn.suggested_voucher_id:
+            continue  # already handled
+
+        debit  = float(txn.debit  or 0)
+        credit = float(txn.credit or 0)
+        if debit == 0 and credit == 0:
             continue
-    return None
 
+        voucher_type = "Receipt" if credit > 0 else "Payment"
+        amount       = credit if credit > 0 else debit
 
-def _parse_amount(s: str) -> float:
-    if not s or s.strip() in ("", "-", "—"):
-        return 0.0
-    try:
-        return float(s.replace(",", "").replace(" ", "").strip())
-    except ValueError:
-        return 0.0
+        # Build a minimal ledger entry suggestion
+        bank_ledger = "Bank Account"
+        counterpart = "Sundry Debtors" if credit > 0 else "Sundry Creditors"
+        entries = [
+            {"ledger": bank_ledger,  "amount": amount, "type": "Dr" if credit > 0 else "Cr"},
+            {"ledger": counterpart,  "amount": amount, "type": "Cr" if credit > 0 else "Dr"},
+        ]
 
+        new_voucher = Voucher(
+            id=str(uuid.uuid4()),
+            tenant_id=tenant_id,
+            client_id=client_id,
+            voucher_type=voucher_type,
+            voucher_date=txn.transaction_date,
+            narration=txn.description or "",
+            amount=Decimal(str(amount)),
+            status="draft",
+            currency="AED",
+            ledger_entries=entries,
+        )
+        db.add(new_voucher)
+        txn.suggested_voucher_id  = new_voucher.id
+        txn.suggested_voucher_ref = f"{voucher_type}/{txn.transaction_date}"
+        created += 1
 
-def _parse_csv(content: bytes) -> list[dict]:
-    text = content.decode("utf-8-sig", errors="replace")
-    reader = csv.DictReader(io.StringIO(text))
-    fn = reader.fieldnames or []
-
-    date_col    = _find_col(fn, ["date", "value date", "txn date", "transaction date", "posting date"])
-    desc_col    = _find_col(fn, ["description", "narration", "particulars", "details", "remarks", "transaction details"])
-    debit_col   = _find_col(fn, ["debit", "withdrawal", "dr amount", "debit amount"])
-    credit_col  = _find_col(fn, ["credit", "deposit", "cr amount", "credit amount"])
-    amount_col  = _find_col(fn, ["amount"]) if not (debit_col or credit_col) else None
-    ref_col     = _find_col(fn, ["reference", "ref no", "cheque", "chq", "transaction id", "txn id", "ref"])
-
-    rows = []
-    for row in reader:
-        raw_date = (row.get(date_col) or "").strip() if date_col else ""
-        txn_date = _parse_date(raw_date)
-        if not txn_date:
-            continue
-
-        debit  = _parse_amount(row.get(debit_col,  "") if debit_col  else "")
-        credit = _parse_amount(row.get(credit_col, "") if credit_col else "")
-
-        if amount_col:
-            amt = _parse_amount(row.get(amount_col, ""))
-            if amt >= 0:
-                credit = amt
-            else:
-                debit = abs(amt)
-
-        # Store as signed amount: credit positive, debit negative
-        amount = credit - debit
-
-        rows.append({
-            "transaction_date": txn_date,
-            "description": (row.get(desc_col) or "").strip() if desc_col else "",
-            "amount": amount,
-            "reference": (row.get(ref_col) or "").strip() if ref_col else "",
-        })
-    return rows
+    return created
 
 
 # ── Pydantic schemas ──────────────────────────────────────────────────────────
@@ -176,21 +226,45 @@ async def upload_bank_statement(
 
     ext = os.path.splitext(file.filename or "")[1].lower()
     if ext not in {".csv", ".xlsx", ".xls", ".pdf"}:
-        raise HTTPException(400, "Only CSV, XLSX or PDF files are accepted")
+        raise HTTPException(400, "Only CSV, XLSX, XLS or PDF files are accepted")
 
     content = await file.read()
 
-    if ext == ".csv":
-        rows = _parse_csv(content)
-    else:
-        # Non-CSV: seed placeholder rows so the UI shows something
-        rows = []
+    # Save to temp file for AI extraction
+    with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
+        tmp.write(content)
+        tmp_path = tmp.name
 
-    if not rows and ext == ".csv":
-        raise HTTPException(400, "No parseable rows found in CSV. Check column headers include Date and Amount/Debit/Credit.")
+    try:
+        ai_result = extract_bank_statement(tmp_path)
+    except Exception as e:
+        ai_result = {"transactions": [], "error": str(e)}
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except Exception:
+            pass
+
+    raw_transactions = ai_result.get("transactions") or []
+    bank_name        = ai_result.get("bank_name")
+    opening_balance  = ai_result.get("opening_balance")
+    closing_balance  = ai_result.get("closing_balance")
+
+    if not raw_transactions:
+        raise HTTPException(
+            400,
+            f"No transactions found in uploaded file. AI message: {ai_result.get('error', 'Unknown error')}"
+        )
 
     # Determine period from parsed rows
-    dates = [r["transaction_date"] for r in rows if r.get("transaction_date")]
+    dates = []
+    for r in raw_transactions:
+        try:
+            d = datetime.strptime(r["date"], "%Y-%m-%d").date()
+            dates.append(d)
+        except Exception:
+            pass
+
     period_start = min(dates) if dates else date.today().replace(day=1)
     period_end   = max(dates) if dates else date.today()
 
@@ -200,25 +274,51 @@ async def upload_bank_statement(
         client_id=client_id,
         period_start=period_start,
         period_end=period_end,
-        bank_account=file.filename or "Uploaded Statement",
-        statement_balance=Decimal("0"),
+        bank_account=ai_result.get("account_number") or file.filename or "Uploaded Statement",
+        bank_name=bank_name,
+        filename=file.filename,
+        opening_balance=Decimal(str(opening_balance)) if opening_balance is not None else None,
+        statement_balance=Decimal(str(closing_balance)) if closing_balance is not None else Decimal("0"),
         status="in_progress",
     )
     db.add(rec)
     await db.flush()
 
-    for r in rows:
+    txn_objects = []
+    for r in raw_transactions:
+        try:
+            txn_date = datetime.strptime(r["date"], "%Y-%m-%d").date()
+        except Exception:
+            continue
+
+        debit  = Decimal(str(r.get("debit")  or 0))
+        credit = Decimal(str(r.get("credit") or 0))
+        amount = credit - debit
+        balance_val = r.get("balance")
+
         txn = BankTransaction(
             id=str(uuid.uuid4()),
             reconciliation_id=rec.id,
             tenant_id=current_user.tenant_id,
-            transaction_date=r["transaction_date"],
-            description=r["description"],
-            amount=Decimal(str(r["amount"])),
+            transaction_date=txn_date,
+            description=str(r.get("description") or ""),
+            amount=amount,
+            debit=debit,
+            credit=credit,
+            balance=Decimal(str(balance_val)) if balance_val is not None else None,
+            reference=str(r.get("reference") or "") or None,
             is_matched=False,
-            tally_ref=None,
         )
         db.add(txn)
+        txn_objects.append(txn)
+
+    await db.flush()
+
+    # Auto-match against existing vouchers
+    await _auto_match_and_suggest(txn_objects, client_id, current_user.tenant_id, db)
+
+    # Auto-create draft vouchers for truly unmatched transactions
+    await _auto_create_vouchers(txn_objects, client_id, current_user.tenant_id, db)
 
     await db.commit()
     await db.refresh(rec)

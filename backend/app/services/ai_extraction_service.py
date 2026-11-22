@@ -353,6 +353,138 @@ def suggest_voucher_entries(extracted_data: dict) -> dict:
         }
 
 
+def extract_bank_statement(file_path: str) -> dict:
+    """
+    Extract all transactions from a bank statement (PDF/CSV/Excel/image).
+    Returns a dict with transactions list and statement metadata.
+    """
+    import csv
+    ext = Path(file_path).suffix.lower()
+
+    if ext in (".csv",):
+        return _extract_bank_statement_csv(file_path)
+
+    if ext in (".xlsx", ".xls"):
+        return _extract_bank_statement_excel(file_path)
+
+    # PDF or image — use Vision API
+    if ext == ".pdf":
+        image_bytes, mime_type = _pdf_to_image(file_path)
+    else:
+        mime_map = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp"}
+        mime_type = mime_map.get(ext, "image/jpeg")
+        with open(file_path, "rb") as f:
+            image_bytes = f.read()
+
+    image_b64 = base64.b64encode(image_bytes).decode("utf-8")
+    prompt = _BANK_STATEMENT_PROMPT
+
+    response = client.chat.completions.create(
+        model="gpt-4o",
+        messages=[
+            {"role": "system", "content": "You are a precise bank statement extractor. Always return valid JSON only."},
+            {"role": "user", "content": [
+                {"type": "text", "text": prompt},
+                {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{image_b64}", "detail": "high"}},
+            ]},
+        ],
+        response_format={"type": "json_object"},
+        temperature=0,
+    )
+    return json.loads(response.choices[0].message.content)
+
+
+def _extract_bank_statement_csv(file_path: str) -> dict:
+    """Parse a CSV bank statement — send raw text to GPT to extract structured transactions."""
+    import csv as csv_mod
+    rows = []
+    try:
+        with open(file_path, "r", encoding="utf-8-sig", errors="replace") as f:
+            reader = csv_mod.reader(f)
+            for row in reader:
+                rows.append(",".join(row))
+        raw_text = "\n".join(rows[:200])
+    except Exception as e:
+        return {"transactions": [], "error": str(e)}
+
+    response = client.chat.completions.create(
+        model="gpt-4o",
+        messages=[
+            {"role": "system", "content": "You are a precise bank statement extractor. Always return valid JSON only."},
+            {"role": "user", "content": _BANK_STATEMENT_PROMPT + "\n\nBank statement CSV:\n" + raw_text},
+        ],
+        response_format={"type": "json_object"},
+        temperature=0,
+    )
+    return json.loads(response.choices[0].message.content)
+
+
+def _extract_bank_statement_excel(file_path: str) -> dict:
+    """Parse an Excel bank statement — convert to text then send to GPT."""
+    try:
+        import openpyxl
+        wb = openpyxl.load_workbook(file_path, read_only=True, data_only=True)
+        ws = wb.active
+        rows = []
+        for row in ws.iter_rows(max_row=200, values_only=True):
+            rows.append("\t".join(str(c) if c is not None else "" for c in row))
+        raw_text = "\n".join(rows)
+        wb.close()
+    except Exception:
+        try:
+            import xlrd
+            wb = xlrd.open_workbook(file_path)
+            ws = wb.sheet_by_index(0)
+            rows = ["\t".join(str(ws.cell_value(r, c)) for c in range(ws.ncols)) for r in range(min(200, ws.nrows))]
+            raw_text = "\n".join(rows)
+        except Exception as e:
+            return {"transactions": [], "error": str(e)}
+
+    response = client.chat.completions.create(
+        model="gpt-4o",
+        messages=[
+            {"role": "system", "content": "You are a precise bank statement extractor. Always return valid JSON only."},
+            {"role": "user", "content": _BANK_STATEMENT_PROMPT + "\n\nBank statement data:\n" + raw_text},
+        ],
+        response_format={"type": "json_object"},
+        temperature=0,
+    )
+    return json.loads(response.choices[0].message.content)
+
+
+_BANK_STATEMENT_PROMPT = """Extract all transactions from this bank statement. Return a JSON object:
+{
+    "bank_name": "string or null",
+    "account_number": "last 4 digits or null",
+    "account_holder": "string or null",
+    "currency": "AED or other",
+    "period_start": "YYYY-MM-DD or null",
+    "period_end": "YYYY-MM-DD or null",
+    "opening_balance": numeric or null,
+    "closing_balance": numeric or null,
+    "transactions": [
+        {
+            "date": "YYYY-MM-DD",
+            "description": "full transaction description as printed",
+            "debit": numeric or 0,
+            "credit": numeric or 0,
+            "balance": numeric or null,
+            "reference": "cheque number or reference if shown or null"
+        }
+    ]
+}
+
+RULES:
+- Extract EVERY transaction row — do not skip any
+- debit = money going OUT (negative cash flow), credit = money coming IN (positive)
+- If the statement shows a single signed amount column: negative = debit, positive = credit
+- dates must be YYYY-MM-DD format
+- amounts must be numeric (no currency symbols, no commas)
+- description: copy the full text exactly as shown
+- balance: running balance after each transaction if shown
+"""
+
+
 def _build_narration(extracted: dict) -> str:
     type_labels = {
         "purchase_invoice": "Purchase Invoice",
