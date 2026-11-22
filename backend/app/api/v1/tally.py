@@ -429,17 +429,36 @@ def _xml_escape(text: str) -> str:
 def _guess_ledger_group(ledger_name: str, is_debit: bool, voucher_type: str) -> str:
     name_lower = ledger_name.lower()
     vtype = (voucher_type or "").lower()
+    # Name-based patterns (highest priority)
     if any(k in name_lower for k in ("cash", "petty cash")):
         return "Cash-in-Hand"
     if any(k in name_lower for k in ("bank", "hdfc", "icici", "axis", "sbi", "emirates", "nbd", "fab", "adcb", "enbd")):
         return "Bank Accounts"
-    if any(k in name_lower for k in ("vat", "gst", "tax", "duty", "tds", "withholding")):
+    if any(k in name_lower for k in ("vat", "gst", "tax", "duty", "tds", "withholding", "excise")):
         return "Duties & Taxes"
-    if any(k in name_lower for k in ("salary", "wages", "payroll", "staff")):
+    if any(k in name_lower for k in ("salary", "wages", "payroll")):
         return "Indirect Expenses"
+    if any(k in name_lower for k in ("sales", "revenue", "income", "turnover", "service income", "consulting")):
+        return "Sales Accounts"
+    if any(k in name_lower for k in ("purchase", "cost of goods", "cogs", "raw material")):
+        return "Purchase Accounts"
+    if any(k in name_lower for k in ("expense", "overhead", "rent", "utility", "telephone", "transport",
+                                      "postage", "printing", "repair", "maintenance", "insurance",
+                                      "commission", "advertisement", "freight", "discount allowed")):
+        return "Indirect Expenses"
+    if any(k in name_lower for k in ("discount received", "interest received", "other income")):
+        return "Indirect Incomes"
+    # Voucher-type-based fallback for party ledgers
+    if vtype in ("sales", "credit note"):
+        return "Sundry Debtors" if is_debit else "Sales Accounts"
+    if vtype in ("purchase", "debit note"):
+        return "Purchase Accounts" if is_debit else "Sundry Creditors"
+    if vtype == "payment":
+        return "Sundry Creditors" if is_debit else "Bank Accounts"
     if vtype == "receipt":
-        return "Sundry Debtors" if is_debit else "Sundry Creditors"
-    return "Sundry Creditors" if is_debit else "Sundry Debtors"
+        return "Bank Accounts" if is_debit else "Sundry Debtors"
+    # Generic fallback
+    return "Sundry Debtors" if is_debit else "Sundry Creditors"
 
 
 def _create_ledger_xml(company: str, ledger_name: str, under_group: str) -> str:
@@ -452,7 +471,7 @@ def _create_ledger_xml(company: str, ledger_name: str, under_group: str) -> str:
     </REQUESTDESC>
     <REQUESTDATA>
       <TALLYMESSAGE xmlns:UDF="TallyUDF">
-        <LEDGER NAME="{_xml_escape(ledger_name)}" ACTION="Create">
+        <LEDGER NAME="{_xml_escape(ledger_name)}" ACTION="Create" RESERVED="No">
           <NAME>{_xml_escape(ledger_name)}</NAME>
           <PARENT>{_xml_escape(under_group)}</PARENT>
         </LEDGER>
