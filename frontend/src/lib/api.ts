@@ -823,30 +823,17 @@ export interface ManualVoucherRequest {
   template_name?: string
 }
 
-export async function createManualVoucher(clientId: string, data: ManualVoucherRequest) {
-  const res = await fetchWithAuth(`/api/v1/vouchers/manual/${clientId}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(data),
-  })
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}))
-    throw new Error(err.detail || "Failed to create voucher")
-  }
-  return res.json()
+export function createManualVoucher(clientId: string, data: ManualVoucherRequest) {
+  return api.post(`/api/v1/vouchers/manual/${clientId}`, data);
 }
 
-export async function listVoucherTemplates(clientId: string) {
-  const res = await fetchWithAuth(`/api/v1/vouchers/templates/${clientId}`)
-  if (!res.ok) throw new Error("Failed to load templates")
-  return res.json()
+export function listVoucherTemplates(clientId: string) {
+  return api.get(`/api/v1/vouchers/templates/${clientId}`);
 }
 
-export async function createFromTemplate(templateId: string, newDate: string, newRef?: string) {
-  const params = new URLSearchParams({ new_date: newDate, ...(newRef ? { new_ref: newRef } : {}) })
-  const res = await fetchWithAuth(`/api/v1/vouchers/from-template/${templateId}?${params}`, { method: "POST" })
-  if (!res.ok) throw new Error("Failed to create from template")
-  return res.json()
+export function createFromTemplate(templateId: string, newDate: string, newRef?: string) {
+  const params = new URLSearchParams({ new_date: newDate, ...(newRef ? { new_ref: newRef } : {}) });
+  return api.post(`/api/v1/vouchers/from-template/${templateId}?${params}`, {});
 }
 
 export interface LedgerPushResult {
@@ -858,14 +845,6 @@ export interface LedgerPushResult {
   message: string;
 }
 
-export async function pushLedgersToTally(clientId: string): Promise<LedgerPushResult> {
-  const res = await fetch(`${API_BASE}/tally/push-ledgers/${clientId}`, {
-    method: "POST",
-    headers: await authHeaders(),
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || "Failed to push ledgers to Tally");
-  }
-  return res.json();
+export function pushLedgersToTally(clientId: string): Promise<LedgerPushResult> {
+  return api.post<LedgerPushResult>(`/api/v1/tally/push-ledgers/${clientId}`, {});
 }
