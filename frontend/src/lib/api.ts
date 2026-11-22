@@ -679,6 +679,33 @@ export function updateLedger(id: string, payload: Partial<Ledger>) {
   return api.patch<Ledger>(`/api/v1/ledgers/${id}`, payload);
 }
 
+export function deleteLedger(id: string) {
+  return api.delete<void>(`/api/v1/ledgers/${id}`);
+}
+
+// ── Outstanding vouchers ──────────────────────────────────────────────────────
+export interface OutstandingVoucher {
+  id: string;
+  voucher_type: string;
+  voucher_number?: string;
+  voucher_date: string;
+  party_name?: string;
+  narration?: string;
+  amount: number;
+  currency: string;
+  is_settled: boolean;
+  settled_ref?: string;
+  settled_date?: string;
+}
+
+export function getOutstanding(clientId: string): Promise<OutstandingVoucher[]> {
+  return api.get<OutstandingVoucher[]>(`/api/v1/vouchers/outstanding/${clientId}`);
+}
+
+export function settleVoucher(id: string, payload: { settled_ref: string; settled_date?: string }) {
+  return api.post<OutstandingVoucher>(`/api/v1/vouchers/${id}/settle`, payload);
+}
+
 // ── Connector Key (Tally Windows agent auth) ──────────────────────────────────
 export interface ConnectorKeyResponse {
   connector_api_key: string | null;
