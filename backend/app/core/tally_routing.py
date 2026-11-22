@@ -48,10 +48,7 @@ async def route_tally_xml(client: Client, xml_payload: str) -> str:
 
     if tunnel_manager.is_connected(tenant_id, client_id):
         logger.info("[TallyRoute] Via tunnel: client=%s", client_id)
-        print(f"[TallyRoute] XML sent:\n{xml_payload}", flush=True)
-        result = await tunnel_manager.send_and_wait(tenant_id, client_id, xml_payload)
-        print(f"[TallyRoute] XML response:\n{result}", flush=True)
-        return result
+        return await tunnel_manager.send_and_wait(tenant_id, client_id, xml_payload)
 
     if settings.DEBUG or getattr(client, "tally_direct_mode", False):
         logger.info(
