@@ -249,6 +249,44 @@ def _build_voucher_xml(company, voucher_type, date, narration, entries,
     if not is_item_invoice:
         invoice_types = {"Sales", "Purchase", "Credit Note", "Debit Note"}
         obj_view = "Invoice Voucher View" if tally_vch_type in invoice_types else "Accounting Voucher View"
+        # Consolidate duplicate ledger entries and find party ledger
+        from collections import defaultdict as _dd
+        _consolidated: dict[tuple, float] = _dd(float)
+        _entry_meta: dict[tuple, dict] = {}
+        for _e in entries:
+            _k = (_e.get("ledger_name", ""), bool(_e.get("is_debit", True)))
+            _amt = float(_e.get("amount", 0))
+            _consolidated[_k] += -_amt if _k[1] else _amt
+            if _k not in _entry_meta:
+                _entry_meta[_k] = _e
+        ledger_xml = ""
+        party_name = ""
+        for (_ln, _is_dr), _ta in _consolidated.items():
+            _idp = "Yes" if _is_dr else "No"
+            _e = _entry_meta[(_ln, _is_dr)]
+            _br = _e.get("bill_ref", "")
+            _cc = _e.get("cost_centre") or ""
+            _bxml = f"""
+            <BILLALLOCATIONS.LIST>
+              <NAME>{_xml_escape(_br)}</NAME>
+              <BILLTYPE>Against Ref</BILLTYPE>
+              <AMOUNT>{_ta:.2f}</AMOUNT>
+            </BILLALLOCATIONS.LIST>""" if use_bill and _br else ""
+            _cxml = f"""
+            <COSTCENTREALLOCATION.LIST>
+              <NAME>{_xml_escape(_cc)}</NAME>
+              <AMOUNT>{_ta:.2f}</AMOUNT>
+            </COSTCENTREALLOCATION.LIST>""" if _cc else ""
+            ledger_xml += f"""
+          <ALLLEDGERENTRIES.LIST>
+            <LEDGERNAME>{_xml_escape(_ln)}</LEDGERNAME>
+            <ISDEEMEDPOSITIVE>{_idp}</ISDEEMEDPOSITIVE>
+            <AMOUNT>{_ta:.2f}</AMOUNT>{_bxml}{_cxml}
+          </ALLLEDGERENTRIES.LIST>"""
+            if _is_dr and not party_name:
+                party_name = _ln
+        persistedview_xml = f"\n          <PERSISTEDVIEW>{obj_view}</PERSISTEDVIEW>" if obj_view == "Invoice Voucher View" else ""
+        party_xml = f"\n          <PARTYLEDGERNAME>{_xml_escape(party_name)}</PARTYLEDGERNAME>" if party_name and obj_view == "Invoice Voucher View" else ""
         return f"""<ENVELOPE>
   <HEADER><TALLYREQUEST>Import Data</TALLYREQUEST></HEADER>
   <BODY><IMPORTDATA>
@@ -261,7 +299,7 @@ def _build_voucher_xml(company, voucher_type, date, narration, entries,
         <VOUCHER VCHTYPE="{tally_vch_type}" ACTION="Create" OBJVIEW="{obj_view}">
           <DATE>{tally_date}</DATE>
           <NARRATION>{_xml_escape(narration)}</NARRATION>
-          <VOUCHERTYPENAME>{tally_vch_type}</VOUCHERTYPENAME>
+          <VOUCHERTYPENAME>{tally_vch_type}</VOUCHERTYPENAME>{persistedview_xml}{party_xml}
           <VOUCHERNUMBER></VOUCHERNUMBER>{ledger_xml}
         </VOUCHER>
       </TALLYMESSAGE>
