@@ -422,7 +422,14 @@ async def _post_to_tally_sync(v: Voucher, company: str, host: str, port: int, ed
         _effective_client = client_obj if client_obj else type('C', (), {'tally_host': host, 'tally_port': port, 'tenant_id': None, 'id': v.client_id, 'name': company, 'tally_direct_mode': False})()
         await _ensure_ledgers_via_tunnel(company, _effective_client, entries, v.voucher_type or "payment")
         if stock_items:
-            await _ensure_stock_items_via_tunnel(company, _effective_client, stock_items)
+            _, failed_items = await _ensure_stock_items_via_tunnel(company, _effective_client, stock_items)
+            if failed_items:
+                # Tally setup doesn't support inventory — fall back to accounting voucher
+                xml = _build_voucher_xml(
+                    company=company, voucher_type=v.voucher_type, date=voucher_date,
+                    narration=v.narration or "", entries=entries,
+                    stock_items=[], invoice_subtype="accounting_invoice",
+                )
 
         if client_obj is None:
             class _TallyClient:

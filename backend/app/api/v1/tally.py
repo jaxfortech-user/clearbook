@@ -445,10 +445,11 @@ def _create_stock_item_xml(company: str, item_name: str, uom: str = "Nos") -> st
 </ENVELOPE>"""
 
 
-async def _ensure_stock_items_via_tunnel(company, client_obj, stock_items) -> list:
-    """Auto-create missing stock items in Tally before posting an item invoice."""
+async def _ensure_stock_items_via_tunnel(company, client_obj, stock_items) -> tuple[list, list]:
+    """Auto-create missing stock items in Tally before posting an item invoice.
+    Returns (created, failed) — if any items failed, caller should fall back to accounting voucher."""
     from app.core.tally_routing import route_tally_xml
-    created = []
+    created, failed = [], []
     for item in stock_items:
         item_name = (item.get("name") or "").strip()
         if not item_name:
@@ -458,14 +459,27 @@ async def _ensure_stock_items_via_tunnel(company, client_obj, stock_items) -> li
         try:
             response = await route_tally_xml(client_obj, xml)
             if "LINEERROR" in response or "IMPORTERROR" in response:
-                continue  # item likely already exists; non-fatal
+                # Could mean item already exists (Tally returns ALTERED) or group missing
+                # Check if ALTERED > 0 (item exists, that's fine)
+                try:
+                    root = ET.fromstring(response)
+                    altered_el = root.find(".//ALTERED")
+                    if altered_el is not None and altered_el.text and int(altered_el.text) > 0:
+                        created.append(item_name)  # already existed
+                        continue
+                except Exception:
+                    pass
+                failed.append(item_name)
+                continue
             root = ET.fromstring(response)
             created_el = root.find(".//CREATED")
             if created_el is not None and created_el.text and int(created_el.text) > 0:
                 created.append(item_name)
+            else:
+                failed.append(item_name)
         except Exception:
-            pass
-    return created
+            failed.append(item_name)
+    return created, failed
 
 
 def _ensure_ledgers_exist_async_wrapper(company, client, entries, voucher_type):
