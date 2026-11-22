@@ -436,7 +436,7 @@ def _create_stock_item_xml(company: str, item_name: str, uom: str = "Nos") -> st
       <TALLYMESSAGE xmlns:UDF="TallyUDF">
         <STOCKITEM NAME="{_xml_escape(item_name)}" ACTION="Create">
           <NAME>{_xml_escape(item_name)}</NAME>
-          <PARENT>All Items</PARENT>
+          <PARENT>Primary</PARENT>
           <BASEUNITS>{_xml_escape(uom)}</BASEUNITS>
         </STOCKITEM>
       </TALLYMESSAGE>
