@@ -393,7 +393,7 @@ def _normalize_entries(raw_entries) -> list:
 
 async def _post_to_tally_sync(v: Voucher, company: str, host: str, port: int, edu_mode: bool = False, client_obj=None) -> dict:
     try:
-        from app.api.v1.tally import _build_voucher_xml, _extract_voucher_number, _ensure_ledgers_via_tunnel
+        from app.api.v1.tally import _build_voucher_xml, _extract_voucher_number, _ensure_ledgers_via_tunnel, _ensure_stock_items_via_tunnel
         from app.core.tally_routing import route_tally_xml
 
         entries = _normalize_entries(v.approved_entries or v.ledger_entries or [])
@@ -419,7 +419,10 @@ async def _post_to_tally_sync(v: Voucher, company: str, host: str, port: int, ed
                 stock_items=stock_items, invoice_subtype=invoice_subtype,
             )
 
-        await _ensure_ledgers_via_tunnel(company, client_obj if client_obj else type('C', (), {'tally_host': host, 'tally_port': port, 'tenant_id': None, 'id': v.client_id, 'name': company, 'tally_direct_mode': False})(), entries, v.voucher_type or "payment")
+        _effective_client = client_obj if client_obj else type('C', (), {'tally_host': host, 'tally_port': port, 'tenant_id': None, 'id': v.client_id, 'name': company, 'tally_direct_mode': False})()
+        await _ensure_ledgers_via_tunnel(company, _effective_client, entries, v.voucher_type or "payment")
+        if stock_items:
+            await _ensure_stock_items_via_tunnel(company, _effective_client, stock_items)
 
         if client_obj is None:
             class _TallyClient:

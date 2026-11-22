@@ -424,6 +424,50 @@ def _create_ledger_xml(company: str, ledger_name: str, under_group: str) -> str:
 </ENVELOPE>"""
 
 
+def _create_stock_item_xml(company: str, item_name: str, uom: str = "Nos") -> str:
+    return f"""<ENVELOPE>
+  <HEADER><TALLYREQUEST>Import Data</TALLYREQUEST></HEADER>
+  <BODY><IMPORTDATA>
+    <REQUESTDESC>
+      <REPORTNAME>All Masters</REPORTNAME>
+      <STATICVARIABLES><SVCURRENTCOMPANY>{_xml_escape(company)}</SVCURRENTCOMPANY></STATICVARIABLES>
+    </REQUESTDESC>
+    <REQUESTDATA>
+      <TALLYMESSAGE xmlns:UDF="TallyUDF">
+        <STOCKITEM NAME="{_xml_escape(item_name)}" ACTION="Create">
+          <NAME>{_xml_escape(item_name)}</NAME>
+          <PARENT>All Items</PARENT>
+          <BASEUNITS>{_xml_escape(uom)}</BASEUNITS>
+        </STOCKITEM>
+      </TALLYMESSAGE>
+    </REQUESTDATA>
+  </IMPORTDATA></BODY>
+</ENVELOPE>"""
+
+
+async def _ensure_stock_items_via_tunnel(company, client_obj, stock_items) -> list:
+    """Auto-create missing stock items in Tally before posting an item invoice."""
+    from app.core.tally_routing import route_tally_xml
+    created = []
+    for item in stock_items:
+        item_name = (item.get("name") or "").strip()
+        if not item_name:
+            continue
+        uom = item.get("per") or item.get("unit") or "Nos"
+        xml = _create_stock_item_xml(company, item_name, uom)
+        try:
+            response = await route_tally_xml(client_obj, xml)
+            if "LINEERROR" in response or "IMPORTERROR" in response:
+                continue  # item likely already exists; non-fatal
+            root = ET.fromstring(response)
+            created_el = root.find(".//CREATED")
+            if created_el is not None and created_el.text and int(created_el.text) > 0:
+                created.append(item_name)
+        except Exception:
+            pass
+    return created
+
+
 def _ensure_ledgers_exist_async_wrapper(company, client, entries, voucher_type):
     created = []
     for entry in entries:
