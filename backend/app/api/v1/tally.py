@@ -269,6 +269,50 @@ def _build_voucher_xml(company, voucher_type, date, narration, entries,
   </IMPORTDATA></BODY>
 </ENVELOPE>"""
 
+    # Consolidate duplicate ledger entries (same ledger name, same ISDEEMEDPOSITIVE)
+    from collections import defaultdict
+    consolidated: dict[tuple, float] = defaultdict(float)
+    entry_meta: dict[tuple, dict] = {}
+    for entry in entries:
+        ledger_name = entry.get("ledger_name", "")
+        is_debit = entry.get("is_debit", True)
+        amount = float(entry.get("amount", 0))
+        tally_amount = amount if not is_debit else -amount
+        key = (ledger_name, is_debit)
+        consolidated[key] += tally_amount
+        if key not in entry_meta:
+            entry_meta[key] = entry
+    ledger_xml = ""
+    party_ledger_name = ""
+    for (ledger_name, is_debit), tally_amount in consolidated.items():
+        is_deemed_positive = "Yes" if is_debit else "No"
+        entry = entry_meta[(ledger_name, is_debit)]
+        bill_ref = entry.get("bill_ref", "")
+        cost_centre = entry.get("cost_centre") or ""
+        bill_xml = ""
+        if use_bill and bill_ref:
+            bill_xml = f"""
+            <BILLALLOCATIONS.LIST>
+              <NAME>{_xml_escape(bill_ref)}</NAME>
+              <BILLTYPE>Against Ref</BILLTYPE>
+              <AMOUNT>{tally_amount:.2f}</AMOUNT>
+            </BILLALLOCATIONS.LIST>"""
+        cost_centre_xml = ""
+        if cost_centre:
+            cost_centre_xml = f"""
+            <COSTCENTREALLOCATION.LIST>
+              <NAME>{_xml_escape(cost_centre)}</NAME>
+              <AMOUNT>{tally_amount:.2f}</AMOUNT>
+            </COSTCENTREALLOCATION.LIST>"""
+        ledger_xml += f"""
+          <ALLLEDGERENTRIES.LIST>
+            <LEDGERNAME>{_xml_escape(ledger_name)}</LEDGERNAME>
+            <ISDEEMEDPOSITIVE>{is_deemed_positive}</ISDEEMEDPOSITIVE>
+            <AMOUNT>{tally_amount:.2f}</AMOUNT>{bill_xml}{cost_centre_xml}
+          </ALLLEDGERENTRIES.LIST>"""
+        if is_debit and not party_ledger_name:
+            party_ledger_name = ledger_name
+
     # Item Invoice XML — includes inventory allocation lines
     inventory_xml = ""
     for item in stock_items:
@@ -302,6 +346,7 @@ def _build_voucher_xml(company, voucher_type, date, narration, entries,
             </BATCHALLOCATIONS.LIST>{item_cc_xml}
           </ALLINVENTORYENTRIES.LIST>"""
 
+    party_xml = f"\n          <PARTYLEDGERNAME>{_xml_escape(party_ledger_name)}</PARTYLEDGERNAME>" if party_ledger_name else ""
     return f"""<ENVELOPE>
   <HEADER><TALLYREQUEST>Import Data</TALLYREQUEST></HEADER>
   <BODY><IMPORTDATA>
@@ -311,10 +356,11 @@ def _build_voucher_xml(company, voucher_type, date, narration, entries,
     </REQUESTDESC>
     <REQUESTDATA>
       <TALLYMESSAGE xmlns:UDF="TallyUDF">
-        <VOUCHER VCHTYPE="{tally_vch_type}" ACTION="Create" OBJVIEW="Item Invoice View">
+        <VOUCHER VCHTYPE="{tally_vch_type}" ACTION="Create" OBJVIEW="Invoice Voucher View">
           <DATE>{tally_date}</DATE>
           <NARRATION>{_xml_escape(narration)}</NARRATION>
           <VOUCHERTYPENAME>{tally_vch_type}</VOUCHERTYPENAME>
+          <PERSISTEDVIEW>Invoice Voucher View</PERSISTEDVIEW>{party_xml}
           <VOUCHERNUMBER></VOUCHERNUMBER>{ledger_xml}{inventory_xml}
         </VOUCHER>
       </TALLYMESSAGE>
