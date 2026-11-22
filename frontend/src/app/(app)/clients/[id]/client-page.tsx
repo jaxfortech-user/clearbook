@@ -468,7 +468,9 @@ function ClientDetailInner() {
                 </thead>
                 <tbody>
                   {documents.map((doc, i) => (
-                    <tr key={doc.id} style={{ borderBottom: i < documents.length - 1 ? "1px solid #ebebeb" : "none" }}
+                    <tr key={doc.id}
+                      onClick={() => router.push(`/documents/${doc.id}`)}
+                      style={{ borderBottom: i < documents.length - 1 ? "1px solid #ebebeb" : "none", cursor: "pointer" }}
                       onMouseEnter={e => (e.currentTarget.style.background = "#fafafa")}
                       onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
                     >
@@ -493,7 +495,7 @@ function ClientDetailInner() {
                       <td style={{ padding: "12px 20px", fontSize: "13px", color: "#a3a3a3", whiteSpace: "nowrap" }}>
                         {doc.created_at ? new Date(doc.created_at).toLocaleDateString("en-AE", { day: "numeric", month: "short", year: "numeric" }) : doc.uploaded ?? "—"}
                       </td>
-                      <td style={{ padding: "12px 24px 12px 20px", textAlign: "right" }}><Button variant="ghost" size="sm" onClick={() => router.push(`/documents/${doc.id}`)}>View</Button></td>
+                      <td style={{ padding: "12px 24px 12px 20px", textAlign: "right", fontSize: "12px", color: "#5266eb", fontWeight: 500 }}>View →</td>
                     </tr>
                   ))}
                 </tbody>
@@ -541,7 +543,9 @@ function ClientDetailInner() {
                 </thead>
                 <tbody>
                   {vouchers.map((v, i) => (
-                    <tr key={v.id} style={{ borderBottom: i < vouchers.length - 1 ? "1px solid #ebebeb" : "none" }}
+                    <tr key={v.id}
+                      onClick={() => router.push(`/vouchers/${v.id}`)}
+                      style={{ borderBottom: i < vouchers.length - 1 ? "1px solid #ebebeb" : "none", cursor: "pointer" }}
                       onMouseEnter={e => (e.currentTarget.style.background = "#fafafa")}
                       onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
                     >
@@ -556,8 +560,8 @@ function ClientDetailInner() {
                       </td>
                       <td style={{ padding: "12px 24px 12px 20px", textAlign: "right" }}>
                         {v.status === "pending"
-                          ? <Button size="sm" onClick={() => handleApprove(v.id)}>Approve</Button>
-                          : <Button variant="ghost" size="sm" onClick={() => router.push(`/vouchers/${v.id}`)}>View</Button>
+                          ? <Button size="sm" onClick={e => { e.stopPropagation(); handleApprove(v.id); }}>Approve</Button>
+                          : <span style={{ fontSize: "12px", color: "#5266eb", fontWeight: 500 }}>View →</span>
                         }
                       </td>
                     </tr>
