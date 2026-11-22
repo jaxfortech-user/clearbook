@@ -220,8 +220,8 @@ def _build_voucher_xml(company, voucher_type, date, narration, entries,
         ledger_name = entry.get("ledger_name", "")
         is_debit = entry.get("is_debit", True)
         amount = float(entry.get("amount", 0))
-        vat_amount = float(entry.get("vat_amount", 0))
         bill_ref = entry.get("bill_ref", "")
+        cost_centre = entry.get("cost_centre") or ""
         tally_amount = amount if not is_debit else -amount
         is_deemed_positive = "Yes" if is_debit else "No"
         bill_xml = ""
@@ -232,11 +232,18 @@ def _build_voucher_xml(company, voucher_type, date, narration, entries,
               <BILLTYPE>Against Ref</BILLTYPE>
               <AMOUNT>{tally_amount:.2f}</AMOUNT>
             </BILLALLOCATIONS.LIST>"""
+        cost_centre_xml = ""
+        if cost_centre:
+            cost_centre_xml = f"""
+            <COSTCENTREALLOCATION.LIST>
+              <NAME>{_xml_escape(cost_centre)}</NAME>
+              <AMOUNT>{tally_amount:.2f}</AMOUNT>
+            </COSTCENTREALLOCATION.LIST>"""
         ledger_xml += f"""
           <ALLLEDGERENTRIES.LIST>
             <LEDGERNAME>{_xml_escape(ledger_name)}</LEDGERNAME>
             <ISDEEMEDPOSITIVE>{is_deemed_positive}</ISDEEMEDPOSITIVE>
-            <AMOUNT>{tally_amount:.2f}</AMOUNT>{bill_xml}
+            <AMOUNT>{tally_amount:.2f}</AMOUNT>{bill_xml}{cost_centre_xml}
           </ALLLEDGERENTRIES.LIST>"""
 
     if not is_item_invoice:
@@ -268,6 +275,14 @@ def _build_voucher_xml(company, voucher_type, date, narration, entries,
         per = _xml_escape(item.get("per") or item.get("unit") or "Nos")
         rate = float(item.get("unit_price") or 0)
         amount = float(item.get("amount") or (qty * rate))
+        item_cc = item.get("cost_centre") or ""
+        item_cc_xml = ""
+        if item_cc:
+            item_cc_xml = f"""
+              <COSTCENTREALLOCATION.LIST>
+                <NAME>{_xml_escape(item_cc)}</NAME>
+                <AMOUNT>-{amount:.2f}</AMOUNT>
+              </COSTCENTREALLOCATION.LIST>"""
         inventory_xml += f"""
           <ALLINVENTORYENTRIES.LIST>
             <STOCKITEMNAME>{name}</STOCKITEMNAME>
@@ -282,7 +297,7 @@ def _build_voucher_xml(company, voucher_type, date, narration, entries,
               <AMOUNT>-{amount:.2f}</AMOUNT>
               <ACTUALQTY>{qty:.2f} {per}</ACTUALQTY>
               <BILLEDQTY>{qty:.2f} {per}</BILLEDQTY>
-            </BATCHALLOCATIONS.LIST>
+            </BATCHALLOCATIONS.LIST>{item_cc_xml}
           </ALLINVENTORYENTRIES.LIST>"""
 
     return f"""<ENVELOPE>

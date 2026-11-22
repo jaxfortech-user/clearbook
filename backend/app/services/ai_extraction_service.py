@@ -41,9 +41,11 @@ Extract structured data from this document. Return a JSON object with ALL of the
             "unit_price": numeric or null,
             "per": "unit label as printed on invoice e.g. Nos, Pcs, KG or null",
             "vat_rate": numeric percentage or null,
-            "amount": numeric or null
+            "amount": numeric or null,
+            "cost_centre": "cost centre / cost center / department name if shown on the line item, or null"
         }
     ],
+    "cost_centre": "default cost centre for the whole invoice if shown, or null",
     "payment_method": "cash|bank_transfer|cheque|card or null",
     "bank_account": "bank name or account reference if mentioned or null",
     "notes": "any other relevant information or null",
@@ -219,6 +221,9 @@ def suggest_voucher_entries(extracted_data: dict) -> dict:
         and any(li.get("quantity") for li in line_items)
     )
     stock_items = []
+    # Default cost centre for the invoice (fallback for each line)
+    invoice_cost_centre = extracted_data.get("cost_centre") or None
+
     if has_stock_items:
         for li in line_items:
             qty = li.get("quantity")
@@ -232,6 +237,7 @@ def suggest_voucher_entries(extracted_data: dict) -> dict:
                 "per": li.get("per") or li.get("unit") or "Nos",
                 "amount": float(li.get("amount") or 0),
                 "vat_rate": float(li.get("vat_rate") or vat_rate or 0),
+                "cost_centre": li.get("cost_centre") or invoice_cost_centre,
             })
 
     # VAT ledger name with rate if known
@@ -248,6 +254,7 @@ def suggest_voucher_entries(extracted_data: dict) -> dict:
                     "is_debit": True,
                     "amount": round(item["amount"], 2),
                     "notes": f"{item['name']} – {item['quantity']} {item['per']} @ {item['unit_price']}",
+                    "cost_centre": item.get("cost_centre"),
                 })
         else:
             entries.append({
@@ -255,6 +262,7 @@ def suggest_voucher_entries(extracted_data: dict) -> dict:
                 "is_debit": True,
                 "amount": round(subtotal, 2),
                 "notes": "Purchase/expense (excl VAT)",
+                "cost_centre": invoice_cost_centre,
             })
         if vat_amount > 0:
             entries.append({
@@ -288,9 +296,10 @@ def suggest_voucher_entries(extracted_data: dict) -> dict:
                     "is_debit": False,
                     "amount": round(item["amount"], 2),
                     "notes": f"{item['name']} – {item['quantity']} {item['per']} @ {item['unit_price']}",
+                    "cost_centre": item.get("cost_centre"),
                 })
         else:
-            entries.append({"ledger_name": "Sales Account", "is_debit": False, "amount": round(subtotal, 2), "notes": "Revenue"})
+            entries.append({"ledger_name": "Sales Account", "is_debit": False, "amount": round(subtotal, 2), "notes": "Revenue", "cost_centre": invoice_cost_centre})
         if vat_amount > 0:
             entries.append({
                 "ledger_name": vat_label_out,

@@ -1,7 +1,7 @@
 """
 Bank reconciliation: upload bank statement → AI parse → auto-match vouchers → auto-create drafts.
 """
-import csv, io, os, uuid, tempfile
+import csv, io, os, re, uuid, tempfile
 from datetime import datetime, date
 from decimal import Decimal
 from typing import Optional
@@ -139,10 +139,14 @@ async def _auto_create_vouchers(
     client_id: str,
     tenant_id: str,
     db: AsyncSession,
+    bank_ledger_name: str = "Bank Account",
 ):
     """
     For unmatched transactions that have no suggestion, auto-create draft
     Receipt (credit) or Payment (debit) vouchers so the accountant can review.
+
+    bank_ledger_name: the actual Tally ledger name for the bank account
+                      (extracted from the statement header, e.g. "Emirates NBD Current Account")
     """
     created = 0
     for txn in txns:
@@ -157,13 +161,22 @@ async def _auto_create_vouchers(
         voucher_type = "Receipt" if credit > 0 else "Payment"
         amount       = credit if credit > 0 else debit
 
-        # Build a minimal ledger entry suggestion
-        bank_ledger = "Bank Account"
-        counterpart = "Sundry Debtors" if credit > 0 else "Sundry Creditors"
-        entries = [
-            {"ledger": bank_ledger,  "amount": amount, "type": "Dr" if credit > 0 else "Cr"},
-            {"ledger": counterpart,  "amount": amount, "type": "Cr" if credit > 0 else "Dr"},
-        ]
+        # Try to extract a counterpart name from the description
+        counterpart = _infer_party_from_description(txn.description or "", credit > 0)
+
+        # Ledger entries: bank account + counterpart
+        if credit > 0:
+            # Receipt: Dr Bank, Cr Counterpart (debtor / customer)
+            entries = [
+                {"ledger_name": bank_ledger_name, "is_debit": True,  "amount": round(amount, 2), "notes": txn.description or ""},
+                {"ledger_name": counterpart,       "is_debit": False, "amount": round(amount, 2), "notes": "Receipt from party"},
+            ]
+        else:
+            # Payment: Dr Counterpart (creditor / supplier), Cr Bank
+            entries = [
+                {"ledger_name": counterpart,       "is_debit": True,  "amount": round(amount, 2), "notes": "Payment to party"},
+                {"ledger_name": bank_ledger_name,  "is_debit": False, "amount": round(amount, 2), "notes": txn.description or ""},
+            ]
 
         new_voucher = Voucher(
             id=str(uuid.uuid4()),
@@ -176,6 +189,7 @@ async def _auto_create_vouchers(
             status="draft",
             currency="AED",
             ledger_entries=entries,
+            party_name=counterpart,
         )
         db.add(new_voucher)
         txn.suggested_voucher_id  = new_voucher.id
@@ -183,6 +197,34 @@ async def _auto_create_vouchers(
         created += 1
 
     return created
+
+
+def _infer_party_from_description(description: str, is_credit: bool) -> str:
+    """
+    Try to extract a counterpart ledger name from the transaction description.
+    Falls back to "Sundry Debtors" (receipt) or "Sundry Creditors" (payment).
+    """
+    desc = description.strip()
+    # Strip common bank prefixes to surface the party name
+    for prefix in (
+        "NEFT-", "IMPS-", "RTGS-", "UPI-", "CHQ-", "TRF-", "TRANSFER-",
+        "CR-", "DR-", "BY ", "TO ", "FROM ", "RECEIPT-", "PAYMENT-",
+        "FT-", "ONLINE TRANSFER ", "WIRE ", "ACH ",
+    ):
+        if desc.upper().startswith(prefix):
+            desc = desc[len(prefix):].strip()
+            break
+
+    # Keep only the first meaningful segment (before / or - or numbers)
+    # Remove reference numbers at the end (e.g. "ACME TRADING 123456789")
+    desc = re.sub(r'\s+\d{6,}$', '', desc).strip()
+    # Capitalise words
+    desc = desc.title()
+
+    if desc and len(desc) > 3:
+        return desc
+
+    return "Sundry Debtors" if is_credit else "Sundry Creditors"
 
 
 # ── Pydantic schemas ──────────────────────────────────────────────────────────
@@ -247,8 +289,21 @@ async def upload_bank_statement(
 
     raw_transactions = ai_result.get("transactions") or []
     bank_name        = ai_result.get("bank_name")
+    account_number   = ai_result.get("account_number")
+    account_holder   = ai_result.get("account_holder")
     opening_balance  = ai_result.get("opening_balance")
     closing_balance  = ai_result.get("closing_balance")
+
+    # Build a meaningful Tally ledger name for the bank account
+    # e.g. "Emirates NBD Current Account" or just "Bank Account" as fallback
+    if bank_name and account_number:
+        bank_ledger_name = f"{bank_name} - {account_number}"
+    elif bank_name:
+        bank_ledger_name = bank_name
+    elif account_number:
+        bank_ledger_name = f"Bank Account - {account_number}"
+    else:
+        bank_ledger_name = "Bank Account"
 
     if not raw_transactions:
         raise HTTPException(
@@ -274,7 +329,7 @@ async def upload_bank_statement(
         client_id=client_id,
         period_start=period_start,
         period_end=period_end,
-        bank_account=ai_result.get("account_number") or file.filename or "Uploaded Statement",
+        bank_account=bank_ledger_name,
         bank_name=bank_name,
         filename=file.filename,
         opening_balance=Decimal(str(opening_balance)) if opening_balance is not None else None,
@@ -318,7 +373,7 @@ async def upload_bank_statement(
     await _auto_match_and_suggest(txn_objects, client_id, current_user.tenant_id, db)
 
     # Auto-create draft vouchers for truly unmatched transactions
-    await _auto_create_vouchers(txn_objects, client_id, current_user.tenant_id, db)
+    await _auto_create_vouchers(txn_objects, client_id, current_user.tenant_id, db, bank_ledger_name)
 
     await db.commit()
     await db.refresh(rec)
