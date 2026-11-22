@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, Suspense } from "react";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import { Topbar } from "@/components/layout/topbar";
 import { AlertCircle, CheckCircle, Loader2, Plug, Copy, Check, Download, Database } from "lucide-react";
 
@@ -73,7 +73,13 @@ const STATUS_STYLE: Record<string, { color: string; label: string }> = {
 
 function TallySettingsInner() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const clientId = searchParams.get("clientId");
+
+  // Redirect to clients list if no client selected
+  useEffect(() => {
+    if (!clientId) router.replace("/clients");
+  }, [clientId, router]);
 
   const [mounted, setMounted] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -117,16 +123,6 @@ function TallySettingsInner() {
           }
         } catch {}
         setLoading(false);
-      } else {
-        try {
-          const stored = localStorage.getItem("clearbook_tally_config");
-          if (stored) {
-            const cfg = JSON.parse(stored);
-            if (cfg.host)    setHost(cfg.host);
-            if (cfg.port)    setPort(String(cfg.port));
-            if (cfg.company) setCompany(cfg.company);
-          }
-        } catch {}
       }
       setMounted(true);
     }
@@ -147,14 +143,6 @@ function TallySettingsInner() {
             tally_company: company.trim(),
           }),
         });
-      } catch {}
-    } else {
-      try {
-        localStorage.setItem("clearbook_tally_config", JSON.stringify({
-          host:    host.trim() || "localhost",
-          port:    parseInt(port) || 9000,
-          company: company.trim(),
-        }));
       } catch {}
     }
     setSaving(false);
@@ -186,16 +174,9 @@ function TallySettingsInner() {
     setTesting(true);
     setTestResult(null);
     try {
-      const url = clientId
-        ? `${API}/api/v1/tally/test/${clientId}`
-        : `${API}/api/v1/tally/test-connection`;
-      const body = clientId
-        ? undefined
-        : JSON.stringify({ host: host.trim() || "localhost", port: parseInt(port) || 9000 });
-      const res = await fetch(url, {
-        method: clientId ? "GET" : "POST",
+      const res = await fetch(`${API}/api/v1/tally/test/${clientId}`, {
+        method: "GET",
         headers: { "Content-Type": "application/json", ...authHeader() },
-        ...(body ? { body } : {}),
       });
       if (res.ok) {
         const data = await res.json();

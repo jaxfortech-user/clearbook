@@ -1,66 +1,34 @@
 # -*- mode: python ; coding: utf-8 -*-
-# ClearbookConnector.spec
-# PyInstaller spec for Clearbook Tally Connector
-# Build: pyinstaller ClearbookConnector.spec
+from PyInstaller.utils.hooks import collect_all
 
-import sys
-from PyInstaller.utils.hooks import collect_all, collect_submodules
+datas = []
+binaries = []
+hiddenimports = ['pystray._win32', 'PIL._tkinter_finder', 'winreg']
+tmp_ret = collect_all('pystray')
+datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
+tmp_ret = collect_all('PIL')
+datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 
-block_cipher = None
-
-# Collect websockets and httpx fully (they use dynamic imports internally)
-ws_datas, ws_binaries, ws_hiddenimports = collect_all('websockets')
-httpx_datas, httpx_binaries, httpx_hiddenimports = collect_all('httpx')
-httpcore_datas, httpcore_binaries, httpcore_hiddenimports = collect_all('httpcore')
 
 a = Analysis(
     ['connector.py'],
-    pathex=['.'],
-    binaries=ws_binaries + httpx_binaries + httpcore_binaries,
-    datas=ws_datas + httpx_datas + httpcore_datas,
-    hiddenimports=(
-        ws_hiddenimports
-        + httpx_hiddenimports
-        + httpcore_hiddenimports
-        + [
-            'tkinter',
-            'tkinter.messagebox',
-            'tkinter.ttk',
-            'win32api',
-            'win32con',
-            'win32event',
-            'win32service',
-            'win32serviceutil',
-            'servicemanager',
-            'pywintypes',
-            'asyncio',
-            'asyncio.base_events',
-            'asyncio.events',
-            'asyncio.futures',
-            'asyncio.tasks',
-            'asyncio.windows_events',
-            'config',
-            'ssl',
-            '_ssl',
-        ]
-    ),
+    pathex=[],
+    binaries=binaries,
+    datas=datas,
+    hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=['matplotlib', 'numpy', 'pandas', 'PIL', 'scipy'],
-    win_no_prefer_redirects=False,
-    win_private_assemblies=False,
-    cipher=block_cipher,
+    excludes=[],
     noarchive=False,
+    optimize=0,
 )
-
-pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
+pyz = PYZ(a.pure)
 
 exe = EXE(
     pyz,
     a.scripts,
     a.binaries,
-    a.zipfiles,
     a.datas,
     [],
     name='ClearbookConnector',

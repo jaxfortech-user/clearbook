@@ -17,7 +17,7 @@ import win32event
 import win32service
 import win32serviceutil
 
-from connector import run_connector
+from connector import run_connector, main as connector_main
 
 
 class TallyConnectorService(win32serviceutil.ServiceFramework):

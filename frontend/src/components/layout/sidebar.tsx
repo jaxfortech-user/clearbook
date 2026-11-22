@@ -35,7 +35,6 @@ const reportsNav = [
 ];
 
 const settingsNav = [
-  { href: "/settings/tally", label: "Tally Settings", icon: Settings },
   { href: "/settings/ledgers", label: "Ledger Master", icon: BookMarked },
 ];
 
