@@ -247,6 +247,8 @@ def _build_voucher_xml(company, voucher_type, date, narration, entries,
           </ALLLEDGERENTRIES.LIST>"""
 
     if not is_item_invoice:
+        invoice_types = {"Sales", "Purchase", "Credit Note", "Debit Note"}
+        obj_view = "Invoice Voucher View" if tally_vch_type in invoice_types else "Accounting Voucher View"
         return f"""<ENVELOPE>
   <HEADER><TALLYREQUEST>Import Data</TALLYREQUEST></HEADER>
   <BODY><IMPORTDATA>
@@ -256,7 +258,7 @@ def _build_voucher_xml(company, voucher_type, date, narration, entries,
     </REQUESTDESC>
     <REQUESTDATA>
       <TALLYMESSAGE xmlns:UDF="TallyUDF">
-        <VOUCHER VCHTYPE="{tally_vch_type}" ACTION="Create" OBJVIEW="Accounting Voucher View">
+        <VOUCHER VCHTYPE="{tally_vch_type}" ACTION="Create" OBJVIEW="{obj_view}">
           <DATE>{tally_date}</DATE>
           <NARRATION>{_xml_escape(narration)}</NARRATION>
           <VOUCHERTYPENAME>{tally_vch_type}</VOUCHERTYPENAME>
