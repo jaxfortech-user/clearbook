@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import {
   getClientById, getClientDocuments, getClientVouchers,
-  approveVoucher, updateTallyMapping, testTallyConnection, pushLedgersToTally,
+  approveVoucher, updateTallyMapping, testTallyConnection,
   getPeriods, createPeriod, tickChecklistItem, getVatReturn, updateVatReturn,
   getLedgers, createLedger, updateLedger, deleteLedger, getOutstanding, settleVoucher,
   type Client, type Document, type Voucher, type Period, type PeriodChecklistItem, type VATReturn, type Ledger, type OutstandingVoucher
@@ -101,8 +101,6 @@ function ClientDetailInner() {
   const [tallyTesting, setTallyTesting] = useState(false);
   const [tallyTestResult, setTallyTestResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [tallyError, setTallyError] = useState("");
-  const [pushingLedgers, setPushingLedgers] = useState(false);
-  const [pushLedgersResult, setPushLedgersResult] = useState<{ ok: boolean; message: string } | null>(null);
 
   useEffect(() => {
     setLoading(true);
@@ -155,18 +153,6 @@ function ClientDetailInner() {
     }
   }
 
-  async function handlePushLedgers() {
-    setPushingLedgers(true);
-    setPushLedgersResult(null);
-    try {
-      const res = await pushLedgersToTally(id);
-      setPushLedgersResult({ ok: true, message: res.message || "Ledgers pushed to Tally successfully." });
-    } catch (e: any) {
-      setPushLedgersResult({ ok: false, message: e instanceof Error ? e.message : "Failed to push ledgers." });
-    } finally {
-      setPushingLedgers(false);
-    }
-  }
 
   useEffect(() => {
     if (tab === "documents") {
@@ -723,36 +709,6 @@ function ClientDetailInner() {
               </div>
             </div>
 
-            {/* Push Ledgers card */}
-            <div style={{ background: "#ffffff", border: "1px solid #ebebeb", borderRadius: "10px", overflow: "hidden" }}>
-              <div style={{ padding: "12px 20px", borderBottom: "1px solid #ebebeb", display: "flex", alignItems: "center", gap: "8px" }}>
-                <span style={{ fontSize: "13px", fontWeight: 600, color: "#0a0a0a" }}>Push Ledgers to Tally</span>
-              </div>
-              <div style={{ padding: "14px 20px", display: "flex", flexDirection: "column", gap: "12px" }}>
-                <p style={{ fontSize: "12px", color: "#737373", margin: 0, lineHeight: "1.5" }}>
-                  Push all active ledgers from your chart of accounts into Tally as masters.
-                  Existing ledgers are skipped safely — only new ones are created.
-                </p>
-                {pushLedgersResult && (
-                  <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "10px 12px", background: pushLedgersResult.ok ? "#d1fae5" : "#fef2f2", border: `1px solid ${pushLedgersResult.ok ? "#6ee7b7" : "#fca5a5"}`, borderRadius: "7px" }}>
-                    {pushLedgersResult.ok
-                      ? <CheckCircle size={13} color="#059669" />
-                      : <AlertCircle size={13} color="#dc2626" />}
-                    <span style={{ fontSize: "12px", color: pushLedgersResult.ok ? "#059669" : "#dc2626" }}>{pushLedgersResult.message}</span>
-                  </div>
-                )}
-                <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                  <button onClick={handlePushLedgers} disabled={pushingLedgers}
-                    style={{ height: "32px", padding: "0 16px", background: pushingLedgers ? "#a5b0f5" : "#5266eb", color: "#fff", border: "none", borderRadius: "7px", fontSize: "12.5px", fontWeight: 600, cursor: pushingLedgers ? "not-allowed" : "pointer", fontFamily: "var(--font-family-sans)", display: "flex", alignItems: "center", gap: "6px" }}
-                    onMouseEnter={e => { if (!pushingLedgers) e.currentTarget.style.background = "#4254d4"; }}
-                    onMouseLeave={e => { if (!pushingLedgers) e.currentTarget.style.background = "#5266eb"; }}
-                  >
-                    {pushingLedgers && <Loader2 size={12} style={{ animation: "spin 1s linear infinite" }} />}
-                    {pushingLedgers ? "Pushing…" : "Push Ledgers to Tally"}
-                  </button>
-                </div>
-              </div>
-            </div>
 
           </div>
         )}

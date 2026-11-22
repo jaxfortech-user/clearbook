@@ -184,14 +184,16 @@ function VoucherDetailPage() {
   async function handlePostToTally() {
     if (!voucher) return;
 
-    let tallyConfig = { host: "localhost", port: 9000, company: "" };
-    try {
-      const stored = localStorage.getItem("clearbook_tally_config");
-      if (stored) tallyConfig = { ...tallyConfig, ...JSON.parse(stored) };
-    } catch {}
+    // Use the client's saved Tally config (from the client record)
+    const clientRecord = clients.find((c: any) => c.id === voucher.client_id);
+    const tallyConfig = {
+      host: clientRecord?.tally_host || "localhost",
+      port: clientRecord?.tally_port || 9000,
+      company: clientRecord?.tally_company || "",
+    };
 
     if (!tallyConfig.company) {
-      setPostError("Tally company not configured. Go to Settings → Tally to set it up.");
+      setPostError("Tally company not configured. Open the client's Tally tab and save the company name first.");
       return;
     }
 
@@ -203,7 +205,7 @@ function VoucherDetailPage() {
         tally_company: tallyConfig.company,
         tally_host: tallyConfig.host,
         tally_port: String(tallyConfig.port),
-        tally_edu_mode: "true",
+        ...(clientRecord?.tally_edu_mode ? { tally_edu_mode: "true" } : {}),
       });
       const res = await fetch(
         `${API}/api/v1/vouchers/${voucher.id}/post-to-tally?${qp}`,
