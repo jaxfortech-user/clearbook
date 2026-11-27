@@ -153,17 +153,37 @@ async def delete_client(
     if tid and client.tenant_id != tid:
         raise HTTPException(status_code=403, detail="Access denied")
 
-    # Import models here to avoid circular imports
     from app.models.voucher import Voucher
     from app.models.document import Document
 
-    # Delete child records in FK order: vouchers first, then documents, then client
+    # Collect S3 keys before deleting DB rows
+    docs_result = await db.execute(
+        select(Document.s3_key).where(Document.client_id == client_id)
+    )
+    s3_keys = [row[0] for row in docs_result.fetchall() if row[0]]
+
+    # Delete DB records in FK order
     await db.execute(delete(Voucher).where(Voucher.client_id == client_id))
     await db.execute(delete(Document).where(Document.client_id == client_id))
     await db.execute(delete(Client).where(Client.id == client_id))
     await db.commit()
 
-    return {"message": "Client and all related data deleted", "id": client_id}
+    # Delete S3 files (best-effort — DB already committed)
+    if s3_keys:
+        try:
+            from app.services.s3_service import s3_client
+            from app.core.config import settings
+            # S3 delete_objects accepts up to 1000 keys per call
+            for i in range(0, len(s3_keys), 1000):
+                batch = [{"Key": k} for k in s3_keys[i:i + 1000]]
+                s3_client.delete_objects(
+                    Bucket=settings.S3_BUCKET_NAME,
+                    Delete={"Objects": batch, "Quiet": True},
+                )
+        except Exception:
+            pass  # S3 cleanup failure doesn't roll back the already-committed deletion
+
+    return {"message": "Client and all related data deleted", "id": client_id, "files_deleted": len(s3_keys)}
 
 
 @router.post("/{client_id}/test-tally-connection")
