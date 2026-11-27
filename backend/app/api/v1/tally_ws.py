@@ -93,6 +93,14 @@ async def tally_connector_ws(
 
 # ── Status endpoint (for frontend indicator) ──────────────────────────────────
 
+@router.get("/ws/debug-token")
+async def debug_token(token: str = Query(...), db: AsyncSession = Depends(get_db)):
+    """Temporary debug: test token lookup."""
+    result = await db.execute(select(Tenant).where(Tenant.connector_api_key == token))
+    tenant = result.scalar_one_or_none()
+    return {"found": tenant is not None, "tenant_id": str(tenant.id) if tenant else None}
+
+
 @router.get("/ws/connector-status/{client_id}")
 async def connector_status(client_id: str, db: AsyncSession = Depends(get_db)):
     """Returns live connector status for the frontend status dot."""
