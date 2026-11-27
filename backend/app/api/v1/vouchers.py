@@ -404,8 +404,17 @@ async def _post_to_tally_sync(v: Voucher, company: str, host: str, port: int, ed
         invoice_subtype = getattr(v, "invoice_subtype", None) or "accounting_invoice"
         if edu_mode:
             import calendar as _cal
-            last_day = _cal.monthrange(v.voucher_date.year, v.voucher_date.month)[1]
-            voucher_date = v.voucher_date.replace(day=last_day)
+            from datetime import date as _date
+            # EDU mode only accepts 1st or last day of month.
+            # Use last day of PREVIOUS month so it's never a future date
+            # and always safely after the company's Books Beginning From.
+            yr, mo = v.voucher_date.year, v.voucher_date.month
+            if mo == 1:
+                prev_yr, prev_mo = yr - 1, 12
+            else:
+                prev_yr, prev_mo = yr, mo - 1
+            last_day_prev = _cal.monthrange(prev_yr, prev_mo)[1]
+            voucher_date = _date(prev_yr, prev_mo, last_day_prev)
         else:
             voucher_date = v.voucher_date
 
