@@ -8,7 +8,7 @@ import tempfile
 import boto3
 from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, delete
 from datetime import datetime, date
 
 from app.core.database import get_db, AsyncSessionLocal
@@ -254,11 +254,8 @@ async def delete_document(
     doc = result.scalar_one_or_none()
     if not doc:
         raise HTTPException(404, "Document not found")
-    # Also delete any associated vouchers
-    voucher_result = await db.execute(select(Voucher).filter(Voucher.document_id == doc_id))
-    for v in voucher_result.scalars().all():
-        await db.delete(v)
-    await db.delete(doc)
+    await db.execute(delete(Voucher).where(Voucher.document_id == doc_id))
+    await db.execute(delete(Document).where(Document.id == doc_id))
     await db.commit()
     return {"message": "Document deleted", "id": doc_id}
 
