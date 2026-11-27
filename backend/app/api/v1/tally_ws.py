@@ -51,7 +51,13 @@ async def tally_connector_ws(
     token: str = Query(...),
     db: AsyncSession = Depends(get_db),
 ):
-    tenant_id = await _verify_connector_token(token, db)
+    try:
+        tenant_id = await _verify_connector_token(token, db)
+    except Exception as exc:
+        logger.error("[WS] Exception in token verify: %s", exc, exc_info=True)
+        await websocket.close(code=4001)
+        return
+    logger.info("[WS] token=%r tenant_id=%r", token, tenant_id)
     if not tenant_id:
         await websocket.close(code=4001)
         logger.warning("[WS] Auth failed — invalid token")
