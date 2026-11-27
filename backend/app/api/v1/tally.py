@@ -247,9 +247,7 @@ def _build_voucher_xml(company, voucher_type, date, narration, entries,
           </ALLLEDGERENTRIES.LIST>"""
 
     if not is_item_invoice:
-        # Sales/Purchase/Credit Note/Debit Note always use Invoice Voucher View in TallyPrime
-        invoice_types = {"sales", "purchase", "credit note", "debit note"}
-        obj_view = "Invoice Voucher View" if tally_vch_type.lower() in invoice_types else "Accounting Voucher View"
+        obj_view = "Accounting Voucher View"
         # Consolidate duplicate ledger entries and find party ledger
         from collections import defaultdict as _dd
         _consolidated: dict[tuple, float] = _dd(float)
