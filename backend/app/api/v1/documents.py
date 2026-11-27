@@ -244,6 +244,25 @@ async def get_document(doc_id: str, db: AsyncSession = Depends(get_db)):
     return _doc_to_dict(doc)
 
 
+@router.delete("/{doc_id}")
+async def delete_document(
+    doc_id: str,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    result = await db.execute(select(Document).filter(Document.id == doc_id))
+    doc = result.scalar_one_or_none()
+    if not doc:
+        raise HTTPException(404, "Document not found")
+    # Also delete any associated vouchers
+    voucher_result = await db.execute(select(Voucher).filter(Voucher.document_id == doc_id))
+    for v in voucher_result.scalars().all():
+        await db.delete(v)
+    await db.delete(doc)
+    await db.commit()
+    return {"message": "Document deleted", "id": doc_id}
+
+
 @router.post("/{doc_id}/extract")
 async def trigger_extraction(
     doc_id: str,

@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   ArrowLeft, FileText, CheckCircle, AlertCircle, Clock,
-  ChevronRight, Loader2, Eye, FilePlus, ThumbsUp
+  ChevronRight, Loader2, Eye, FilePlus, ThumbsUp, Trash2, RefreshCw
 } from "lucide-react";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -176,6 +176,8 @@ function DocumentDetailPage() {
   const [clients, setClients] = useState<{ id: string; name: string }[]>([]);
   const [assigningClient, setAssigningClient] = useState(false);
   const [showClientPicker, setShowClientPicker] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [reextracting, setReextracting] = useState(false);
 
   useEffect(() => {
     fetchJson<{ id: string; name: string }[]>(`${API}/api/v1/clients/`)
@@ -207,6 +209,42 @@ function DocumentDetailPage() {
       .then(d => { setDoc(d); setLoading(false); })
       .catch(e => { setError(e.message); setLoading(false); });
   }, [id]);
+
+  const handleDelete = async () => {
+    if (!doc) return;
+    if (!confirm("Delete this document and its voucher? This cannot be undone.")) return;
+    setDeleting(true);
+    try {
+      await fetchJson(`${API}/api/v1/documents/${doc.id}`, { method: "DELETE" });
+      router.push("/documents");
+    } catch (e: unknown) {
+      alert("Failed to delete: " + (e instanceof Error ? e.message : String(e)));
+      setDeleting(false);
+    }
+  };
+
+  const handleReextract = async () => {
+    if (!doc) return;
+    setReextracting(true);
+    try {
+      await fetchJson(`${API}/api/v1/documents/${doc.id}/extract`, { method: "POST" });
+      // Poll for completion
+      let attempts = 0;
+      const poll = setInterval(async () => {
+        attempts++;
+        const updated = await fetchJson<DocumentDetail>(`${API}/api/v1/documents/${id}`);
+        if (updated.status !== "uploaded" && updated.status !== "processing") {
+          clearInterval(poll);
+          setDoc(updated);
+          setReextracting(false);
+        }
+        if (attempts > 30) { clearInterval(poll); setReextracting(false); }
+      }, 2000);
+    } catch (e: unknown) {
+      alert("Failed to re-extract: " + (e instanceof Error ? e.message : String(e)));
+      setReextracting(false);
+    }
+  };
 
   const handleCreateVoucher = async () => {
     if (!doc) return;
@@ -278,6 +316,24 @@ function DocumentDetailPage() {
                 <Eye size={12} /> Preview
               </Button>
             )}
+            <Button
+              variant="outline" size="sm"
+              disabled={reextracting}
+              onClick={handleReextract}
+              style={{ display: "flex", gap: "5px", alignItems: "center" }}
+            >
+              {reextracting ? <Loader2 size={12} style={{ animation: "spin 0.7s linear infinite" }} /> : <RefreshCw size={12} />}
+              {reextracting ? "Extracting…" : "Re-extract"}
+            </Button>
+            <Button
+              variant="outline" size="sm"
+              disabled={deleting}
+              onClick={handleDelete}
+              style={{ display: "flex", gap: "5px", alignItems: "center", color: "#ef4444", borderColor: "#fecaca" }}
+            >
+              {deleting ? <Loader2 size={12} style={{ animation: "spin 0.7s linear infinite" }} /> : <Trash2 size={12} />}
+              {deleting ? "Deleting…" : "Delete"}
+            </Button>
             {noClientWarning && (
               <Button size="sm" variant="outline" onClick={() => setShowClientPicker(true)} style={{ display: "flex", gap: "5px", alignItems: "center" }}>
                 <FilePlus size={12} /> Assign Client
