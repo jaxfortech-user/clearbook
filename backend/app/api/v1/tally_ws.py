@@ -45,7 +45,7 @@ async def _set_all_clients_status(tenant_id: str, status: str, db: AsyncSession)
 
 # ── WebSocket endpoint ────────────────────────────────────────────────────────
 
-@router.websocket("/ws")
+@router.websocket("/ws/")
 async def tally_connector_ws(
     websocket: WebSocket,
     token: str = Query(...),
