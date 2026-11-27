@@ -289,8 +289,9 @@ export default function DocumentsPage() {
                 {documents.map((doc, i) => (
                   <tr
                     key={doc.id}
-                    style={{ borderBottom: i < documents.length - 1 ? "1px solid #ebebeb" : "none" }}
-                    onMouseEnter={e => (e.currentTarget.style.background = "#fafafa")}
+                    onClick={() => router.push(`/documents/${doc.id}`)}
+                    style={{ borderBottom: i < documents.length - 1 ? "1px solid #ebebeb" : "none", cursor: "pointer" }}
+                    onMouseEnter={e => (e.currentTarget.style.background = "#f5f5f5")}
                     onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
                   >
                     <td style={{ padding: "12px 20px", whiteSpace: "nowrap" }}>
