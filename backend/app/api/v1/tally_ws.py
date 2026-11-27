@@ -51,13 +51,7 @@ async def tally_connector_ws(
     token: str = Query(...),
     db: AsyncSession = Depends(get_db),
 ):
-    try:
-        tenant_id = await _verify_connector_token(token, db)
-    except Exception as exc:
-        logger.error("[WS] Exception in token verify: %s", exc, exc_info=True)
-        await websocket.close(code=4001)
-        return
-    logger.info("[WS] token=%r tenant_id=%r", token, tenant_id)
+    tenant_id = await _verify_connector_token(token, db)
     if not tenant_id:
         await websocket.close(code=4001)
         logger.warning("[WS] Auth failed — invalid token")
@@ -98,14 +92,6 @@ async def tally_connector_ws(
 
 
 # ── Status endpoint (for frontend indicator) ──────────────────────────────────
-
-@router.get("/ws/debug-token")
-async def debug_token(token: str = Query(...), db: AsyncSession = Depends(get_db)):
-    """Temporary debug: test token lookup."""
-    result = await db.execute(select(Tenant).where(Tenant.connector_api_key == token))
-    tenant = result.scalar_one_or_none()
-    return {"found": tenant is not None, "tenant_id": str(tenant.id) if tenant else None}
-
 
 @router.get("/ws/connector-status/{client_id}")
 async def connector_status(client_id: str, db: AsyncSession = Depends(get_db)):
