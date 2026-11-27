@@ -11,7 +11,7 @@ EXTRACTION_PROMPT = """You are a precise UAE accounting document extractor. Alwa
 
 Extract structured data from this document. Return a JSON object with ALL of these fields (use null if not found):
 {
-    "document_type": "purchase_invoice|sales_invoice|receipt|bank_statement|purchase_order|credit_note|debit_note|petty_cash|delivery_note|other",
+    "document_type": "purchase_invoice|sales_invoice|receipt|payment_voucher|contra_voucher|journal_voucher|bank_statement|purchase_order|credit_note|debit_note|petty_cash|delivery_note|other",
     "invoice_subtype": "item_invoice|accounting_invoice",
     "is_handwritten": false,
     "language": "english|arabic|mixed",
@@ -61,7 +61,14 @@ Extract structured data from this document. Return a JSON object with ALL of the
 }
 
 RULES:
-- document_type MUST be one of the values listed above
+- document_type MUST be one of the values listed above. Use these definitions:
+  - purchase_invoice: a supplier's tax invoice for goods or services bought (you are the BUYER)
+  - sales_invoice: an invoice you issued to a customer (you are the SELLER)
+  - receipt: a receipt voucher confirming money RECEIVED from a customer into your bank/cash (shows "Receipt Voucher", "BRV", "Money received from [Customer]")
+  - payment_voucher: a payment voucher confirming money PAID OUT to a supplier/payee (shows "Payment Voucher", "BPV", "Paid to [Supplier]", "Cheque payment to")
+  - contra_voucher: a bank-to-cash or cash-to-bank transfer within the same entity (shows "Contra Voucher", "Cash Withdrawal", "Cash Deposit")
+  - journal_voucher: an internal accounting entry (depreciation, write-offs, provisions, adjustments; shows "Journal Voucher", "JV")
+  - petty_cash: small cash expense reimbursement
 - invoice_subtype: use "item_invoice" if the invoice has physical goods with quantity/rate/unit columns;
   use "accounting_invoice" if it's a service or single-amount billing (no stock items)
 - is_handwritten: true if any part of the document is handwritten
@@ -70,6 +77,9 @@ RULES:
 - line_items: extract EVERY line item shown on the invoice, including services; never skip any line
 - For item invoices: always capture quantity, unit_price, per, and amount for each line
 - vat_rate: extract the actual percentage shown (e.g. 5 for UAE VAT, not 0.05)
+- vendor_name: the COUNTERPARTY supplying goods/services or being paid — NOT the company that issued the document. For a payment voucher, this is the PAYEE (the party receiving payment). For a purchase invoice, this is the SUPPLIER. Never put the buying/paying company's own name here.
+- buyer_name: the COUNTERPARTY who is the customer — for a receipt voucher, this is the CUSTOMER who made the payment.
+- bank_account: the bank account name used for payment/receipt (e.g. "Emirates NBD Current Account") — extract exactly as shown
 - Null for missing fields, never empty string
 """
 
@@ -244,7 +254,98 @@ def suggest_voucher_entries(extracted_data: dict) -> dict:
     vat_label_in = f"Input VAT {vat_rate}%" if vat_rate else "Input VAT"
     vat_label_out = f"Output VAT {vat_rate}%" if vat_rate else "Output VAT"
 
-    if doc_type in ["purchase_invoice", "receipt"]:
+    # Bank/cash account for payment and receipt vouchers
+    bank_account = extracted_data.get("bank_account") or "Emirates NBD Current Account"
+
+    if doc_type == "receipt":
+        # Money received FROM a customer INTO our bank account
+        # Dr Bank Account (asset increases), Cr Customer (reduces receivable)
+        customer = extracted_data.get("buyer_name") or "Customer"
+        entries = [
+            {"ledger_name": bank_account, "is_debit": True, "amount": round(total, 2), "notes": "Cash/bank received"},
+            {"ledger_name": customer, "is_debit": False, "amount": round(total, 2), "notes": "Customer receipt"},
+        ]
+        return {
+            "voucher_type": "Receipt",
+            "invoice_subtype": "accounting_invoice",
+            "narration": narration,
+            "currency": currency,
+            "total_amount": total,
+            "stock_items": [],
+            "entries": entries,
+        }
+
+    if doc_type == "payment_voucher":
+        # Money PAID OUT to a supplier/payee FROM our bank account
+        # Dr Supplier/Payee (reduces payable), Cr Bank Account (asset decreases)
+        entries = [
+            {"ledger_name": vendor, "is_debit": True, "amount": round(total, 2), "notes": "Payment to payee"},
+            {"ledger_name": bank_account, "is_debit": False, "amount": round(total, 2), "notes": "Bank payment"},
+        ]
+        return {
+            "voucher_type": "Payment",
+            "invoice_subtype": "accounting_invoice",
+            "narration": narration,
+            "currency": currency,
+            "total_amount": total,
+            "stock_items": [],
+            "entries": entries,
+        }
+
+    if doc_type == "contra_voucher":
+        # Cash ↔ Bank transfer within same entity
+        # Typically: Dr Cash, Cr Bank (withdrawal) or Dr Bank, Cr Cash (deposit)
+        payment_method = (extracted_data.get("payment_method") or "").lower()
+        notes_lower = (extracted_data.get("notes") or "").lower()
+        is_deposit = any(w in notes_lower for w in ("deposit", "cash deposited"))
+        entries = (
+            [
+                {"ledger_name": bank_account, "is_debit": True, "amount": round(total, 2), "notes": "Cash deposited"},
+                {"ledger_name": "Cash", "is_debit": False, "amount": round(total, 2), "notes": "Cash deposited to bank"},
+            ] if is_deposit else [
+                {"ledger_name": "Cash", "is_debit": True, "amount": round(total, 2), "notes": "Cash withdrawn"},
+                {"ledger_name": bank_account, "is_debit": False, "amount": round(total, 2), "notes": "Bank withdrawal"},
+            ]
+        )
+        return {
+            "voucher_type": "Contra",
+            "invoice_subtype": "accounting_invoice",
+            "narration": narration,
+            "currency": currency,
+            "total_amount": total,
+            "stock_items": [],
+            "entries": entries,
+        }
+
+    if doc_type == "journal_voucher":
+        # Internal journal — try to build meaningful entries from line items
+        entries = []
+        if line_items:
+            for li in line_items:
+                desc = li.get("description") or "Account"
+                amt = float(li.get("amount") or 0)
+                if amt == 0:
+                    continue
+                # Simple heuristic: first entry debit, rest credit
+                is_dr = len(entries) == 0
+                entries.append({"ledger_name": desc, "is_debit": is_dr, "amount": round(amt, 2)})
+        if not entries:
+            # Depreciation fallback
+            entries = [
+                {"ledger_name": "Depreciation", "is_debit": True, "amount": round(total, 2), "notes": "Depreciation expense"},
+                {"ledger_name": "Accumulated Depreciation", "is_debit": False, "amount": round(total, 2), "notes": "Accumulated depreciation"},
+            ]
+        return {
+            "voucher_type": "Journal",
+            "invoice_subtype": "accounting_invoice",
+            "narration": narration,
+            "currency": currency,
+            "total_amount": total,
+            "stock_items": [],
+            "entries": entries,
+        }
+
+    if doc_type == "purchase_invoice":
         entries = []
         if has_stock_items:
             # Each stock item maps to its own purchase ledger line
@@ -269,7 +370,7 @@ def suggest_voucher_entries(extracted_data: dict) -> dict:
                 "ledger_name": vat_label_in,
                 "is_debit": True,
                 "amount": round(vat_amount, 2),
-                "notes": f"Input VAT recoverable",
+                "notes": "Input VAT recoverable",
             })
         entries.append({
             "ledger_name": vendor,

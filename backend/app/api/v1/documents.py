@@ -384,14 +384,31 @@ _LEDGER_GROUP_MAP: dict[str, str] = {
     "Petty Cash":            "Cash-in-Hand",
     "Bank":                  "Bank Accounts",
     "Bank Account":          "Bank Accounts",
+    "Emirates NBD":          "Bank Accounts",
+    "ENBD":                  "Bank Accounts",
+    "FAB":                   "Bank Accounts",
+    "ADCB":                  "Bank Accounts",
+    "Mashreq":               "Bank Accounts",
+    "HSBC":                  "Bank Accounts",
+    "Current Account":       "Bank Accounts",
+    "Savings Account":       "Bank Accounts",
+    # Expenses / depreciation
+    "Depreciation":          "Indirect Expenses",
+    "Accumulated Depreciation": "Fixed Assets",
     # Liabilities / assets
     "Suspense Account":      "Suspense A/c",
 }
 
 def _guess_group(name: str, is_debit: bool) -> str:
     """Guess Tally group from ledger name; fall back by DR/CR."""
+    name_lower = name.lower()
+    # Bank keywords check first (before map lookup)
+    if any(k in name_lower for k in ("nbd", "enbd", "fab", "adcb", "mashreq", "hsbc", "emirates nbd", "current account", "savings account")):
+        return "Bank Accounts"
+    if "bank" in name_lower:
+        return "Bank Accounts"
     for key, grp in _LEDGER_GROUP_MAP.items():
-        if key.lower() in name.lower():
+        if key.lower() in name_lower:
             return grp
     # Heuristic: debit lines are usually assets/expenses; credit lines liabilities/income
     return "Sundry Debtors" if is_debit else "Sundry Creditors"
