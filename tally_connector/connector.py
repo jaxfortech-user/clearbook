@@ -212,7 +212,7 @@ async def run_connector(stop_event: threading.Event | None = None):
         log.info("Auto-start on login enabled.")
 
     ws_url = (
-        f"wss://{config['clearbook_host']}/api/v1/tally/ws/{config['client_id']}"
+        f"wss://{config['clearbook_host']}/api/v1/tally/ws"
         f"?token={config['api_key']}"
     )
     _tally_host = config.get("tally_host", "127.0.0.1")
@@ -221,7 +221,7 @@ async def run_connector(stop_event: threading.Event | None = None):
     backoff = BACKOFF_INITIAL
 
     log.info("Clearbook Tally Connector starting…")
-    log.info(f"Connecting to: wss://{config['clearbook_host']}/api/v1/tally/ws/{config['client_id']}")
+    log.info(f"Connecting to: wss://{config['clearbook_host']}/api/v1/tally/ws")
 
     while True:
         if stop_event and stop_event.is_set():
@@ -326,7 +326,7 @@ def _show_auth_error():
 
 
 def _migrate_old_configs(config: dict) -> None:
-    """Copy credentials from old locations into AppData config (one-time)."""
+    """Remove stale config files from old locations (one-time cleanup)."""
     appdata_cfg = get_config_dir() / "config.json"
     old_locations = [
         Path.home() / "config.json",
@@ -336,8 +336,7 @@ def _migrate_old_configs(config: dict) -> None:
         if old.exists() and old != appdata_cfg:
             try:
                 old_cfg = json.loads(old.read_text(encoding="utf-8-sig"))
-                if old_cfg.get("client_id") and not str(old_cfg["client_id"]).startswith("REPLACE_"):
-                    # Already migrated to AppData — just remove the stale file
+                if old_cfg.get("api_key") and not str(old_cfg["api_key"]).startswith("REPLACE_"):
                     old.unlink(missing_ok=True)
                     log.info(f"Removed stale config from {old}")
             except Exception:

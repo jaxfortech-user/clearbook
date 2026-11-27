@@ -53,10 +53,9 @@ async def generate_connector_key(
     return {
         "api_key": api_key,
         "config_template": {
-            "clearbook_host": "wss://YOUR_SUBDOMAIN.duckdns.org",
-            "client_id": "PASTE_CLIENT_UUID_HERE",
+            "clearbook_host": "clearbook-app.duckdns.org",
             "api_key": api_key,
-            "tally_host": "localhost",
+            "tally_host": "127.0.0.1",
             "tally_port": 9000,
         },
     }
@@ -76,14 +75,15 @@ async def connector_status_all(
     )
     clients = result.scalars().all()
 
+    # All clients share one tunnel per tenant — use first client's tenant_id
+    tenant_id = str(clients[0].tenant_id) if clients else str(current_user.tenant_id)
+    is_alive = tunnel_manager.is_connected(tenant_id)
     return [
         {
             "client_id": str(c.id),
             "client_name": c.name,
             "status": c.tally_connector_status,
-            "tally_alive": tunnel_manager.is_connected(
-                str(c.tenant_id), str(c.id)
-            ),
+            "tally_alive": is_alive,
         }
         for c in clients
     ]

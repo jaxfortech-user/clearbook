@@ -10,7 +10,7 @@ import os
 import sys
 from pathlib import Path
 
-REQUIRED_KEYS = ["clearbook_host", "client_id", "api_key"]
+REQUIRED_KEYS = ["clearbook_host", "api_key"]
 
 DEFAULTS = {
     "clearbook_host": "clearbook-app.duckdns.org",
@@ -28,7 +28,7 @@ def get_config_dir() -> Path:
 
 
 def _show_setup_wizard(config_path: Path) -> dict:
-    """GUI wizard — asks Client ID and API Key, saves config.json."""
+    """GUI wizard — asks only for the API Key, saves config.json."""
     try:
         import tkinter as tk
         from tkinter import messagebox
@@ -39,27 +39,22 @@ def _show_setup_wizard(config_path: Path) -> dict:
     root = tk.Tk()
     root.title("Clearbook Connector — Setup")
     root.resizable(False, False)
-    root.geometry("460x300")
+    root.geometry("460x240")
     root.attributes("-topmost", True)
 
     # Center on screen
     root.update_idletasks()
     x = (root.winfo_screenwidth() - 460) // 2
-    y = (root.winfo_screenheight() - 300) // 2
-    root.geometry(f"460x300+{x}+{y}")
+    y = (root.winfo_screenheight() - 240) // 2
+    root.geometry(f"460x240+{x}+{y}")
 
     tk.Label(root, text="Clearbook Tally Connector",
              font=("Segoe UI", 14, "bold")).pack(pady=(22, 4))
     tk.Label(root,
-             text="Enter the credentials from:\nClearbook platform → Client → Settings → Tally Integration",
+             text="Enter the API Key from:\nClearbook platform → Any Client → Settings → Tally Integration",
              font=("Segoe UI", 9), fg="#555", justify="center").pack(pady=(0, 18))
 
-    # Client ID
-    tk.Label(root, text="Client ID", font=("Segoe UI", 9, "bold"), anchor="w").pack(fill="x", padx=36)
-    client_var = tk.StringVar()
-    tk.Entry(root, textvariable=client_var, font=("Segoe UI", 10), width=50).pack(padx=36, pady=(2, 12))
-
-    # API Key
+    # API Key only — no Client ID needed (one connector per firm)
     tk.Label(root, text="API Key", font=("Segoe UI", 9, "bold"), anchor="w").pack(fill="x", padx=36)
     api_var = tk.StringVar()
     tk.Entry(root, textvariable=api_var, font=("Segoe UI", 10), width=50, show="•").pack(padx=36, pady=(2, 20))
@@ -67,12 +62,10 @@ def _show_setup_wizard(config_path: Path) -> dict:
     result = {}
 
     def on_save():
-        cid = client_var.get().strip()
         key = api_var.get().strip()
-        if not cid or not key:
-            messagebox.showwarning("Missing fields", "Please enter both Client ID and API Key.")
+        if not key:
+            messagebox.showwarning("Missing field", "Please enter the API Key.")
             return
-        result["client_id"] = cid
         result["api_key"] = key
         root.destroy()
 
@@ -103,7 +96,7 @@ def load_config() -> dict:
         config = json.load(f)
 
     # Unfilled template — show wizard again
-    unfilled = [k for k in ["client_id", "api_key"]
+    unfilled = [k for k in ["api_key"]
                 if not config.get(k) or str(config.get(k, "")).startswith("REPLACE_")]
     if unfilled:
         return _show_setup_wizard(config_path)

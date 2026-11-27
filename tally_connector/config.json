@@ -1,0 +1,6 @@
+{
+  "clearbook_host": "clearbook-app.duckdns.org",
+  "api_key": "REPLACE_WITH_YOUR_API_KEY",
+  "tally_host": "127.0.0.1",
+  "tally_port": 9000
+}

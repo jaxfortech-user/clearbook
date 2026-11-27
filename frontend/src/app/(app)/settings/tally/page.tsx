@@ -273,7 +273,8 @@ function TallySettingsInner() {
             </div>
             <div style={{ padding: "16px 24px 20px", display: "flex", flexDirection: "column", gap: "14px" }}>
               <p style={{ fontSize: "12px", color: "#737373", margin: 0, lineHeight: "1.5" }}>
-                Enter these when you run <strong>ClearbookConnector.exe</strong> for the first time on the Tally machine.
+                Enter the API Key when you run <strong>ClearbookConnector.exe</strong> for the first time.
+                One connector connects all your clients — no Client ID needed.
               </p>
               {loading ? (
                 <div style={{ display: "flex", alignItems: "center", gap: "8px", color: "#a3a3a3", fontSize: "12.5px" }}>
@@ -281,7 +282,6 @@ function TallySettingsInner() {
                 </div>
               ) : (
                 <>
-                  <CopyField label="Client ID" value={clientId} mono />
                   <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
                 <label style={{ fontSize: "12px", fontWeight: 600, color: "#525252" }}>API Key</label>
                 <div style={{ display: "flex", gap: "8px" }}>

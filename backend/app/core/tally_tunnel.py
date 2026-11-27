@@ -19,34 +19,28 @@ logger = logging.getLogger(__name__)
 class TallyTunnelManager:
 
     def __init__(self):
-        # Active WebSocket connections: "tenant_id:client_id" → WebSocket
+        # Active WebSocket connections: tenant_id → WebSocket (one per tenant)
         self._connections: Dict[str, WebSocket] = {}
-        # Pending response futures: "tenant_id:client_id:request_id" → Future
+        # Pending response futures: "tenant_id:request_id" → Future
         self._pending: Dict[str, asyncio.Future] = {}
-
-    def _key(self, tenant_id: str, client_id: str) -> str:
-        return f"{tenant_id}:{client_id}"
 
     # ── Connection lifecycle ──────────────────────────────────────────────────
 
-    def register(self, tenant_id: str, client_id: str, websocket: WebSocket) -> None:
-        key = self._key(tenant_id, client_id)
-        self._connections[key] = websocket
-        logger.info("[Tunnel] Registered connector: %s", key)
+    def register(self, tenant_id: str, websocket: WebSocket) -> None:
+        self._connections[tenant_id] = websocket
+        logger.info("[Tunnel] Registered connector: tenant=%s", tenant_id)
 
-    def deregister(self, tenant_id: str, client_id: str) -> None:
-        key = self._key(tenant_id, client_id)
-        self._connections.pop(key, None)
-        # Cancel all pending futures for this client
-        to_cancel = [k for k in self._pending if k.startswith(f"{key}:")]
+    def deregister(self, tenant_id: str) -> None:
+        self._connections.pop(tenant_id, None)
+        to_cancel = [k for k in self._pending if k.startswith(f"{tenant_id}:")]
         for fk in to_cancel:
             future = self._pending.pop(fk, None)
             if future and not future.done():
                 future.cancel()
-        logger.info("[Tunnel] Deregistered connector: %s", key)
+        logger.info("[Tunnel] Deregistered connector: tenant=%s", tenant_id)
 
-    def is_connected(self, tenant_id: str, client_id: str) -> bool:
-        return self._key(tenant_id, client_id) in self._connections
+    def is_connected(self, tenant_id: str, client_id: str = "") -> bool:
+        return tenant_id in self._connections
 
     def connected_clients(self) -> list[str]:
         return list(self._connections.keys())
@@ -64,25 +58,24 @@ class TallyTunnelManager:
         self._connections.clear()
         logger.info("[Tunnel] All connections closed on shutdown")
 
-
     # ── Request / response ────────────────────────────────────────────────────
 
     async def send_and_wait(
         self,
         tenant_id: str,
-        client_id: str,
         xml_payload: str,
         timeout: float = 30.0,
+        client_id: str = "",  # kept for backward compat — not used
     ) -> str:
-        key = self._key(tenant_id, client_id)
-        websocket = self._connections.get(key)
+        websocket = self._connections.get(tenant_id)
         if not websocket:
             raise ConnectionError(
-                f"No active Tally Connector for client '{client_id}'"
+                "No active Tally Connector for this tenant. "
+                "Install and run ClearbookConnector.exe on the Tally machine."
             )
 
         request_id = str(uuid4())
-        future_key = f"{key}:{request_id}"
+        future_key = f"{tenant_id}:{request_id}"
         loop = asyncio.get_event_loop()
         future: asyncio.Future[str] = loop.create_future()
         self._pending[future_key] = future
@@ -97,18 +90,14 @@ class TallyTunnelManager:
             return response
         except asyncio.TimeoutError:
             raise TimeoutError(
-                f"Tally did not respond within {timeout}s "
-                f"(client='{client_id}', request='{request_id}')"
+                f"Tally did not respond within {timeout}s (request='{request_id}')"
             )
         finally:
             self._pending.pop(future_key, None)
 
-    def resolve(self, tenant_id: str, client_id: str, request_id: str, response_xml: str) -> bool:
-        """
-        Called when the connector sends back a response.
-        Returns True if a matching pending future was found and resolved.
-        """
-        future_key = f"{self._key(tenant_id, client_id)}:{request_id}"
+    def resolve(self, tenant_id: str, request_id: str, response_xml: str, client_id: str = "") -> bool:
+        """Called when the connector sends back a response."""
+        future_key = f"{tenant_id}:{request_id}"
         future = self._pending.get(future_key)
         if future and not future.done():
             future.set_result(response_xml)
