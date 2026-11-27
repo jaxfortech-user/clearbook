@@ -286,6 +286,8 @@ def _build_voucher_xml(company, voucher_type, date, narration, entries,
                 party_name = _ln
         persistedview_xml = f"\n          <PERSISTEDVIEW>{obj_view}</PERSISTEDVIEW>" if obj_view == "Invoice Voucher View" else ""
         party_xml = f"\n          <PARTYLEDGERNAME>{_xml_escape(party_name)}</PARTYLEDGERNAME>" if party_name and obj_view == "Invoice Voucher View" else ""
+        is_invoice_type = tally_vch_type.lower() in ("sales", "purchase", "credit note", "debit note")
+        isinvoice_xml = "\n          <ISINVOICE>Yes</ISINVOICE>" if is_invoice_type else ""
         return f"""<ENVELOPE>
   <HEADER><TALLYREQUEST>Import Data</TALLYREQUEST></HEADER>
   <BODY><IMPORTDATA>
@@ -297,8 +299,9 @@ def _build_voucher_xml(company, voucher_type, date, narration, entries,
       <TALLYMESSAGE xmlns:UDF="TallyUDF">
         <VOUCHER VCHTYPE="{tally_vch_type}" ACTION="Create" OBJVIEW="{obj_view}">
           <DATE>{tally_date}</DATE>
+          <EFFECTIVEDATE>{tally_date}</EFFECTIVEDATE>
           <NARRATION>{_xml_escape(narration)}</NARRATION>
-          <VOUCHERTYPENAME>{tally_vch_type}</VOUCHERTYPENAME>{persistedview_xml}{party_xml}
+          <VOUCHERTYPENAME>{tally_vch_type}</VOUCHERTYPENAME>{isinvoice_xml}{persistedview_xml}{party_xml}
           <VOUCHERNUMBER></VOUCHERNUMBER>{ledger_xml}
         </VOUCHER>
       </TALLYMESSAGE>
@@ -395,8 +398,10 @@ def _build_voucher_xml(company, voucher_type, date, narration, entries,
       <TALLYMESSAGE xmlns:UDF="TallyUDF">
         <VOUCHER VCHTYPE="{tally_vch_type}" ACTION="Create" OBJVIEW="Invoice Voucher View">
           <DATE>{tally_date}</DATE>
+          <EFFECTIVEDATE>{tally_date}</EFFECTIVEDATE>
           <NARRATION>{_xml_escape(narration)}</NARRATION>
           <VOUCHERTYPENAME>{tally_vch_type}</VOUCHERTYPENAME>
+          <ISINVOICE>Yes</ISINVOICE>
           <PERSISTEDVIEW>Invoice Voucher View</PERSISTEDVIEW>{party_xml}
           <VOUCHERNUMBER></VOUCHERNUMBER>{ledger_xml}{inventory_xml}
         </VOUCHER>
