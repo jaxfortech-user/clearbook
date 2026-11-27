@@ -3,8 +3,8 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Topbar } from "@/components/layout/topbar";
-import { Search, X, Loader2, AlertCircle, Users } from "lucide-react";
-import { getClients, createClient, type Client } from "@/lib/api";
+import { Search, X, Loader2, AlertCircle, Users, Trash2 } from "lucide-react";
+import { getClients, createClient, deleteClient, type Client } from "@/lib/api";
 
 const statusStyle: Record<string, { bg: string; color: string }> = {
   active:   { bg: "#d1fae5", color: "#059669" },
@@ -47,6 +47,8 @@ export default function ClientsPage() {
   const [loadError, setLoadError] = useState("");
   const [search, setSearch] = useState("");
   const [searchFocused, setSearchFocused] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<Client | null>(null);
 
   // Modal state
   const [showModal, setShowModal] = useState(false);
@@ -82,6 +84,17 @@ export default function ClientsPage() {
 
   function set(field: string, value: string) {
     setForm(prev => ({ ...prev, [field]: value }));
+  }
+
+  async function handleDelete(client: Client) {
+    setDeletingId(client.id);
+    try {
+      await deleteClient(client.id);
+      setClients(prev => prev.filter(c => c.id !== client.id));
+    } finally {
+      setDeletingId(null);
+      setConfirmDelete(null);
+    }
   }
 
   async function handleSave() {
@@ -185,12 +198,21 @@ export default function ClientsPage() {
                       <td style={{ padding: "12px 20px", fontSize: "13px", color: "#525252", whiteSpace: "nowrap" }}>{client.docs ?? 0}</td>
                       <td style={{ padding: "12px 20px", fontSize: "13px", color: "#a3a3a3", whiteSpace: "nowrap" }}>{client.lastActivity ?? "—"}</td>
                       <td style={{ padding: "12px 24px 12px 20px", whiteSpace: "nowrap", textAlign: "right" }}>
-                        <button
-                          onClick={() => router.push(`/clients/${client.id}`)}
-                          style={{ height: "28px", padding: "0 12px", background: "none", border: "1px solid #ebebeb", borderRadius: "6px", fontSize: "12px", color: "#525252", cursor: "pointer", fontFamily: "var(--font-family-sans)" }}
-                          onMouseEnter={e => { e.currentTarget.style.background = "#f5f5f5"; e.currentTarget.style.borderColor = "#d4d4d4"; }}
-                          onMouseLeave={e => { e.currentTarget.style.background = "none"; e.currentTarget.style.borderColor = "#ebebeb"; }}
-                        >View</button>
+                        <div style={{ display: "flex", gap: "6px", justifyContent: "flex-end" }}>
+                          <button
+                            onClick={() => router.push(`/clients/${client.id}`)}
+                            style={{ height: "28px", padding: "0 12px", background: "none", border: "1px solid #ebebeb", borderRadius: "6px", fontSize: "12px", color: "#525252", cursor: "pointer", fontFamily: "var(--font-family-sans)" }}
+                            onMouseEnter={e => { e.currentTarget.style.background = "#f5f5f5"; e.currentTarget.style.borderColor = "#d4d4d4"; }}
+                            onMouseLeave={e => { e.currentTarget.style.background = "none"; e.currentTarget.style.borderColor = "#ebebeb"; }}
+                          >View</button>
+                          <button
+                            onClick={() => setConfirmDelete(client)}
+                            style={{ height: "28px", width: "28px", display: "flex", alignItems: "center", justifyContent: "center", background: "none", border: "1px solid #ebebeb", borderRadius: "6px", cursor: "pointer", color: "#a3a3a3" }}
+                            title="Delete company"
+                            onMouseEnter={e => { e.currentTarget.style.background = "#fef2f2"; e.currentTarget.style.borderColor = "#fca5a5"; (e.currentTarget as HTMLElement).style.color = "#dc2626"; }}
+                            onMouseLeave={e => { e.currentTarget.style.background = "none"; e.currentTarget.style.borderColor = "#ebebeb"; (e.currentTarget as HTMLElement).style.color = "#a3a3a3"; }}
+                          ><Trash2 size={12} /></button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -310,6 +332,45 @@ export default function ClientsPage() {
               >
                 {saving && <Loader2 size={12} style={{ animation: "spin 1s linear infinite" }} />}
                 {saving ? "Saving…" : "Add Client"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── DELETE CONFIRM DIALOG ── */}
+      {confirmDelete && (
+        <div
+          onClick={() => { if (!deletingId) setConfirmDelete(null); }}
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.35)", backdropFilter: "blur(4px)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: "20px" }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{ background: "#ffffff", borderRadius: "12px", boxShadow: "0 20px 60px rgba(0,0,0,0.15)", width: "100%", maxWidth: "420px", padding: "24px" }}
+          >
+            <div style={{ display: "flex", alignItems: "flex-start", gap: "14px", marginBottom: "20px" }}>
+              <div style={{ width: "38px", height: "38px", borderRadius: "10px", background: "#fef2f2", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                <Trash2 size={16} color="#dc2626" />
+              </div>
+              <div>
+                <h3 style={{ fontSize: "14px", fontWeight: 650, color: "#0a0a0a", marginBottom: "4px" }}>Delete Company</h3>
+                <p style={{ fontSize: "13px", color: "#525252", lineHeight: 1.5 }}>
+                  This will permanently delete <strong>{confirmDelete.name}</strong> and all its documents and vouchers. This cannot be undone.
+                </p>
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
+              <button
+                onClick={() => setConfirmDelete(null)}
+                disabled={!!deletingId}
+                style={{ height: "32px", padding: "0 14px", background: "none", border: "1px solid #ebebeb", borderRadius: "7px", fontSize: "13px", color: "#525252", cursor: "pointer", fontFamily: "var(--font-family-sans)" }}
+              >Cancel</button>
+              <button
+                onClick={() => handleDelete(confirmDelete)}
+                disabled={!!deletingId}
+                style={{ height: "32px", padding: "0 14px", background: deletingId ? "#f5f5f5" : "#dc2626", color: deletingId ? "#a3a3a3" : "#fff", border: "none", borderRadius: "7px", fontSize: "13px", fontWeight: 600, cursor: deletingId ? "not-allowed" : "pointer", fontFamily: "var(--font-family-sans)", display: "flex", alignItems: "center", gap: "6px" }}
+              >
+                {deletingId ? <><Loader2 size={12} style={{ animation: "spin 1s linear infinite" }} /> Deleting…</> : "Delete Company"}
               </button>
             </div>
           </div>

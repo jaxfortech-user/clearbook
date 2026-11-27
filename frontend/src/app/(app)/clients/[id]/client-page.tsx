@@ -10,13 +10,14 @@ import { Button } from "@/components/ui/button";
 import {
   ArrowLeft, Building2, FileText, Receipt,
   Phone, Mail, MapPin, Calendar, AlertCircle, Loader2,
-  Plug, CheckCircle, Wifi, WifiOff, ClipboardList, Plus, ChevronDown, ChevronRight
+  Plug, CheckCircle, Wifi, WifiOff, ClipboardList, Plus, ChevronDown, ChevronRight, Trash2
 } from "lucide-react";
 import {
   getClientById, getClientDocuments, getClientVouchers,
   approveVoucher, updateTallyMapping, testTallyConnection,
   getPeriods, createPeriod, tickChecklistItem, getVatReturn, updateVatReturn,
   getLedgers, createLedger, updateLedger, deleteLedger, getOutstanding, settleVoucher,
+  deleteClient,
   type Client, type Document, type Voucher, type Period, type PeriodChecklistItem, type VATReturn, type Ledger, type OutstandingVoucher
 } from "@/lib/api";
 
@@ -101,6 +102,8 @@ function ClientDetailInner() {
   const [tallyTesting, setTallyTesting] = useState(false);
   const [tallyTestResult, setTallyTestResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [tallyError, setTallyError] = useState("");
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     setLoading(true);
@@ -115,6 +118,18 @@ function ClientDetailInner() {
       .catch(e => setClientError(e.message || "Failed to load client"))
       .finally(() => setLoading(false));
   }, [id]);
+
+  async function handleDeleteClient() {
+    setDeleting(true);
+    try {
+      await deleteClient(id);
+      router.push("/clients");
+    } catch (e: unknown) {
+      alert(e instanceof Error ? e.message : "Failed to delete company");
+      setDeleting(false);
+      setShowDeleteConfirm(false);
+    }
+  }
 
   async function handleSaveTally() {
     if (!tallyCompany.trim()) { setTallyError("Company name is required."); return; }
@@ -309,15 +324,27 @@ function ClientDetailInner() {
 
       <div style={{ padding: "20px 28px", display: "flex", flexDirection: "column", gap: "16px" }}>
 
-        {/* Back */}
-        <button
-          onClick={() => router.push("/clients")}
-          style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "13px", color: "#525252", background: "none", border: "none", cursor: "pointer", padding: 0, width: "fit-content" }}
-          onMouseEnter={e => (e.currentTarget.style.color = "#0a0a0a")}
-          onMouseLeave={e => (e.currentTarget.style.color = "#525252")}
-        >
-          <ArrowLeft size={14} /> Back to Clients
-        </button>
+        {/* Back + Delete */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <button
+            onClick={() => router.push("/clients")}
+            style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "13px", color: "#525252", background: "none", border: "none", cursor: "pointer", padding: 0 }}
+            onMouseEnter={e => (e.currentTarget.style.color = "#0a0a0a")}
+            onMouseLeave={e => (e.currentTarget.style.color = "#525252")}
+          >
+            <ArrowLeft size={14} /> Back to Clients
+          </button>
+          {client && (
+            <button
+              onClick={() => setShowDeleteConfirm(true)}
+              style={{ display: "flex", alignItems: "center", gap: "6px", height: "30px", padding: "0 12px", background: "none", border: "1px solid #ebebeb", borderRadius: "7px", fontSize: "12px", color: "#a3a3a3", cursor: "pointer", fontFamily: "var(--font-family-sans)" }}
+              onMouseEnter={e => { e.currentTarget.style.background = "#fef2f2"; e.currentTarget.style.borderColor = "#fca5a5"; e.currentTarget.style.color = "#dc2626"; }}
+              onMouseLeave={e => { e.currentTarget.style.background = "none"; e.currentTarget.style.borderColor = "#ebebeb"; e.currentTarget.style.color = "#a3a3a3"; }}
+            >
+              <Trash2 size={12} /> Delete Company
+            </button>
+          )}
+        </div>
 
         {/* Tabs */}
         <div style={{ display: "flex", gap: "2px", background: "#f0f0f0", padding: "3px", borderRadius: "10px", width: "fit-content" }}>
@@ -963,6 +990,47 @@ function ClientDetailInner() {
         )}
 
       </div>
+
+      {/* ── DELETE CONFIRM DIALOG ── */}
+      {showDeleteConfirm && client && (
+        <div
+          onClick={() => { if (!deleting) setShowDeleteConfirm(false); }}
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.35)", backdropFilter: "blur(4px)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: "20px" }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{ background: "#ffffff", borderRadius: "12px", boxShadow: "0 20px 60px rgba(0,0,0,0.15)", width: "100%", maxWidth: "420px", padding: "24px" }}
+          >
+            <div style={{ display: "flex", alignItems: "flex-start", gap: "14px", marginBottom: "20px" }}>
+              <div style={{ width: "38px", height: "38px", borderRadius: "10px", background: "#fef2f2", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                <Trash2 size={16} color="#dc2626" />
+              </div>
+              <div>
+                <h3 style={{ fontSize: "14px", fontWeight: 650, color: "#0a0a0a", marginBottom: "4px" }}>Delete Company</h3>
+                <p style={{ fontSize: "13px", color: "#525252", lineHeight: 1.5 }}>
+                  This will permanently delete <strong>{client.name}</strong> and all its documents and vouchers. This cannot be undone.
+                </p>
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
+              <button
+                onClick={() => setShowDeleteConfirm(false)}
+                disabled={deleting}
+                style={{ height: "32px", padding: "0 14px", background: "none", border: "1px solid #ebebeb", borderRadius: "7px", fontSize: "13px", color: "#525252", cursor: "pointer", fontFamily: "var(--font-family-sans)" }}
+              >Cancel</button>
+              <button
+                onClick={handleDeleteClient}
+                disabled={deleting}
+                style={{ height: "32px", padding: "0 14px", background: deleting ? "#f5f5f5" : "#dc2626", color: deleting ? "#a3a3a3" : "#fff", border: "none", borderRadius: "7px", fontSize: "13px", fontWeight: 600, cursor: deleting ? "not-allowed" : "pointer", fontFamily: "var(--font-family-sans)", display: "flex", alignItems: "center", gap: "6px" }}
+              >
+                {deleting ? <><Loader2 size={12} style={{ animation: "spin 1s linear infinite" }} /> Deleting…</> : "Delete Company"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
     </div>
   );
 }

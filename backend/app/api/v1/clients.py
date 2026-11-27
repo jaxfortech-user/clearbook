@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, delete
 from typing import List
 import uuid
 from datetime import datetime
@@ -137,6 +137,33 @@ async def update_tally_mapping(client_id: str, payload: dict, db: AsyncSession =
     await db.flush()
     await db.refresh(client)
     return _client_to_dict(client)
+
+
+@router.delete("/{client_id}")
+async def delete_client(
+    client_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    result = await db.execute(select(Client).where(Client.id == client_id))
+    client = result.scalar_one_or_none()
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found")
+    tid = tenant_filter(user)
+    if tid and client.tenant_id != tid:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    # Import models here to avoid circular imports
+    from app.models.voucher import Voucher
+    from app.models.document import Document
+
+    # Delete child records in FK order: vouchers first, then documents, then client
+    await db.execute(delete(Voucher).where(Voucher.client_id == client_id))
+    await db.execute(delete(Document).where(Document.client_id == client_id))
+    await db.execute(delete(Client).where(Client.id == client_id))
+    await db.commit()
+
+    return {"message": "Client and all related data deleted", "id": client_id}
 
 
 @router.post("/{client_id}/test-tally-connection")
