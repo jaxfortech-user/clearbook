@@ -402,7 +402,7 @@ async def _post_to_tally_sync(v: Voucher, company: str, host: str, port: int, ed
 
         stock_items = _normalize_entries(v.stock_items) if getattr(v, "stock_items", None) else []
         invoice_subtype = getattr(v, "invoice_subtype", None) or "accounting_invoice"
-        voucher_date = v.voucher_date.replace(day=1) if edu_mode else v.voucher_date
+        voucher_date = v.voucher_date
 
         # Route by voucher type when line_items present (Payment/Receipt/Journal/Contra)
         _vt = (v.voucher_type or "").lower()
