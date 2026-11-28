@@ -103,8 +103,6 @@ function ClientDetailInner() {
   const [tallyTestResult, setTallyTestResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [tallyError, setTallyError] = useState("");
   const [mastersPushing, setMastersPushing] = useState(false);
-  const [mastersResult, setMastersResult] = useState(null);
-  const [mastersPushing, setMastersPushing] = useState(false);
   const [mastersResult, setMastersResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
