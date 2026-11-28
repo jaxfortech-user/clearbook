@@ -246,8 +246,9 @@ def _build_voucher_xml(company, voucher_type, date, narration, entries,
             <AMOUNT>{tally_amount:.2f}</AMOUNT>{bill_xml}{cost_centre_xml}
           </ALLLEDGERENTRIES.LIST>"""
 
+    is_invoice_type = tally_vch_type.lower() in ("sales", "purchase", "credit note", "debit note")
     if not is_item_invoice:
-        obj_view = "Accounting Voucher View"
+        obj_view = "Invoice Voucher View" if is_invoice_type else "Accounting Voucher View"
         # Consolidate duplicate ledger entries and find party ledger
         from collections import defaultdict as _dd
         _consolidated: dict[tuple, float] = _dd(float)
@@ -284,8 +285,9 @@ def _build_voucher_xml(company, voucher_type, date, narration, entries,
           </ALLLEDGERENTRIES.LIST>"""
             if _is_dr and not party_name:
                 party_name = _ln
-        persistedview_xml = f"\n          <PERSISTEDVIEW>{obj_view}</PERSISTEDVIEW>" if obj_view == "Invoice Voucher View" else ""
-        party_xml = f"\n          <PARTYLEDGERNAME>{_xml_escape(party_name)}</PARTYLEDGERNAME>" if party_name and obj_view == "Invoice Voucher View" else ""
+        isinvoice_xml = "\n          <ISINVOICE>Yes</ISINVOICE>" if is_invoice_type else ""
+        persistedview_xml = f"\n          <PERSISTEDVIEW>{obj_view}</PERSISTEDVIEW>" if is_invoice_type else ""
+        party_xml = f"\n          <PARTYLEDGERNAME>{_xml_escape(party_name)}</PARTYLEDGERNAME>" if party_name and is_invoice_type else ""
         return f"""<ENVELOPE>
   <HEADER><TALLYREQUEST>Import Data</TALLYREQUEST></HEADER>
   <BODY><IMPORTDATA>
@@ -299,7 +301,7 @@ def _build_voucher_xml(company, voucher_type, date, narration, entries,
           <DATE>{tally_date}</DATE>
           <EFFECTIVEDATE>{tally_date}</EFFECTIVEDATE>
           <NARRATION>{_xml_escape(narration)}</NARRATION>
-          <VOUCHERTYPENAME>{tally_vch_type}</VOUCHERTYPENAME>{persistedview_xml}{party_xml}
+          <VOUCHERTYPENAME>{tally_vch_type}</VOUCHERTYPENAME>{isinvoice_xml}{persistedview_xml}{party_xml}
           <VOUCHERNUMBER></VOUCHERNUMBER>{ledger_xml}
         </VOUCHER>
       </TALLYMESSAGE>
