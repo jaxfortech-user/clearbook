@@ -102,6 +102,10 @@ function ClientDetailInner() {
   const [tallyTesting, setTallyTesting] = useState(false);
   const [tallyTestResult, setTallyTestResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [tallyError, setTallyError] = useState("");
+  const [mastersPushing, setMastersPushing] = useState(false);
+  const [mastersResult, setMastersResult] = useState(null);
+  const [mastersPushing, setMastersPushing] = useState(false);
+  const [mastersResult, setMastersResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
@@ -165,6 +169,23 @@ function ClientDetailInner() {
       setTallyTestResult({ ok: false, message: e instanceof Error ? e.message : "Could not reach Tally." });
     } finally {
       setTallyTesting(false);
+    }
+  }
+
+  async function handlePushMasters() {
+    setMastersResult(null); setMastersPushing(true);
+    try {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/v1/tally-masters/push-standard?client_id=${id}`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "Push failed");
+      setMastersResult({ ok: true, message: `created: ${data.created}, exists: ${data.already_exists}` });
+    } catch (e) {
+      setMastersResult({ ok: false, message: e instanceof Error ? e.message : "Failed." });
+    } finally {
+      setMastersPushing(false);
     }
   }
 
@@ -727,6 +748,11 @@ function ClientDetailInner() {
                 >
                   {tallyTesting && <Loader2 size={12} style={{ animation: "spin 1s linear infinite" }} />}
                   {tallyTesting ? "Testing…" : "Test Connection"}
+                </button>
+                <button onClick={handlePushMasters} disabled={mastersPushing}
+                  style={{ height: "32px", padding: "0 14px", background: "none", border: "1px solid #5266eb", borderRadius: "7px", fontSize: "12.5px", color: "#5266eb", cursor: mastersPushing ? "not-allowed" : "pointer", fontFamily: "var(--font-family-sans)", display: "flex", alignItems: "center", gap: "6px" }}
+                >
+                  {mastersPushing ? "Syncing..." : "Sync Masters"}
                 </button>
                 <button onClick={handleSaveTally} disabled={tallySaving}
                   style={{ height: "32px", padding: "0 16px", background: tallySaving ? "#a5b0f5" : "#5266eb", color: "#fff", border: "none", borderRadius: "7px", fontSize: "12.5px", fontWeight: 600, cursor: tallySaving ? "not-allowed" : "pointer", fontFamily: "var(--font-family-sans)", display: "flex", alignItems: "center", gap: "6px" }}
