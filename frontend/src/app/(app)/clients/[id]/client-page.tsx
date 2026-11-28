@@ -153,6 +153,24 @@ function ClientDetailInner() {
     }
   }
 
+  async function handlePushMasters() {
+    setMastersResult(null)
+    setMastersPushing(true)
+    try {
+      const res = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/api/v1/tally-masters/push-standard?client_id=${id}`,
+        { method: "POST", headers: { Authorization: `Bearer ${localStorage.getItem("clearbook_token")}` } }
+      )
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.detail || "Push failed")
+      setMastersResult({ ok: true, message: `created: ${data.created}, exists: ${data.already_exists}` })
+    } catch (e) {
+      setMastersResult({ ok: false, message: e instanceof Error ? e.message : "Failed." })
+    } finally {
+      setMastersPushing(false)
+    }
+  }
+
   async function handleTestTally() {
     setTallyError(""); setTallyTestResult(null); setTallyTesting(true);
     try {
