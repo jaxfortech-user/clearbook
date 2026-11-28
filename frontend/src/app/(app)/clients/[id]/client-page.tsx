@@ -175,7 +175,7 @@ function ClientDetailInner() {
     try {
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/v1/tally-masters/push-standard?client_id=${id}`, {
         method: "POST",
-        headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
+        headers: { Authorization: `Bearer ${localStorage.getItem("clearbook_token")}` },
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || "Push failed");
