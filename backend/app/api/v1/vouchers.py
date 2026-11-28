@@ -421,11 +421,11 @@ async def _post_to_tally_sync(v: Voucher, company: str, host: str, port: int, ed
         # Route by voucher type when line_items present (Payment/Receipt/Journal/Contra)
         _vt = (v.voucher_type or "").lower()
         if v.line_items and _vt in ("payment", "receipt"):
-            xml = _make_payment_xml(v, company)
+            xml = _make_payment_xml(v, company, voucher_date)
         elif v.line_items and _vt == "journal":
-            xml = _make_journal_xml(v, company)
+            xml = _make_journal_xml(v, company, voucher_date)
         elif v.line_items and _vt == "contra":
-            xml = _make_contra_xml(v, company)
+            xml = _make_contra_xml(v, company, voucher_date)
         else:
             xml = _build_voucher_xml(
                 company=company, voucher_type=v.voucher_type, date=voucher_date,
@@ -649,7 +649,7 @@ def _tally_date(d) -> str:
     return str(d).replace("-", "") if d else ""
 
 
-def _make_payment_xml(v, company: str) -> str:
+def _make_payment_xml(v, company: str, voucher_date=None) -> str:
     items = v.line_items or []
     lines_xml = ""
     for item in items:
@@ -680,7 +680,7 @@ def _make_payment_xml(v, company: str) -> str:
     </REQUESTDESC>
     <REQUESTDATA><TALLYMESSAGE xmlns:UDF="TallyUDF">
       <VOUCHER VCHTYPE="{vtype}" ACTION="Create" OBJVIEW="Accounting Voucher View">
-        <DATE>{_tally_date(v.voucher_date)}</DATE>
+        <DATE>{_tally_date(voucher_date or v.voucher_date)}</DATE>
         <VOUCHERTYPENAME>{vtype}</VOUCHERTYPENAME>
         <VOUCHERNUMBER>{v.voucher_number or ""}</VOUCHERNUMBER>
         <NARRATION>{v.narration or ""}</NARRATION>
@@ -690,7 +690,7 @@ def _make_payment_xml(v, company: str) -> str:
   </IMPORTDATA></BODY></ENVELOPE>"""
 
 
-def _make_journal_xml(v, company: str) -> str:
+def _make_journal_xml(v, company: str, voucher_date=None) -> str:
     items = v.line_items or []
     lines_xml = ""
     for item in items:
@@ -712,7 +712,7 @@ def _make_journal_xml(v, company: str) -> str:
     </REQUESTDESC>
     <REQUESTDATA><TALLYMESSAGE xmlns:UDF="TallyUDF">
       <VOUCHER VCHTYPE="Journal" ACTION="Create" OBJVIEW="Accounting Voucher View">
-        <DATE>{_tally_date(v.voucher_date)}</DATE>
+        <DATE>{_tally_date(voucher_date or v.voucher_date)}</DATE>
         <VOUCHERTYPENAME>Journal</VOUCHERTYPENAME>
         <VOUCHERNUMBER>{v.voucher_number or ""}</VOUCHERNUMBER>
         <NARRATION>{v.narration or ""}</NARRATION>
@@ -722,7 +722,7 @@ def _make_journal_xml(v, company: str) -> str:
   </IMPORTDATA></BODY></ENVELOPE>"""
 
 
-def _make_contra_xml(v, company: str) -> str:
+def _make_contra_xml(v, company: str, voucher_date=None) -> str:
     items = v.line_items or []
     lines_xml = ""
     for item in items:
@@ -744,7 +744,7 @@ def _make_contra_xml(v, company: str) -> str:
     </REQUESTDESC>
     <REQUESTDATA><TALLYMESSAGE xmlns:UDF="TallyUDF">
       <VOUCHER VCHTYPE="Contra" ACTION="Create" OBJVIEW="Accounting Voucher View">
-        <DATE>{_tally_date(v.voucher_date)}</DATE>
+        <DATE>{_tally_date(voucher_date or v.voucher_date)}</DATE>
         <VOUCHERTYPENAME>Contra</VOUCHERTYPENAME>
         <VOUCHERNUMBER>{v.voucher_number or ""}</VOUCHERNUMBER>
         <NARRATION>{v.narration or ""}</NARRATION>
