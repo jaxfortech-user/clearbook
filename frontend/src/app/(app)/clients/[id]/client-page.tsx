@@ -188,43 +188,6 @@ function ClientDetailInner() {
     }
   }
 
-  async function handlePushMasters() {
-    setMastersResult(null); setMastersPushing(true);
-    try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/v1/tally-masters/push-standard?client_id=${id}`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${localStorage.getItem("clearbook_token")}` },
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || "Push failed");
-      setMastersResult({ ok: true, message: `created: ${data.created}, exists: ${data.already_exists}` });
-    } catch (e) {
-      setMastersResult({ ok: false, message: e instanceof Error ? e.message : "Failed." });
-    } finally {
-      setMastersPushing(false);
-    }
-  }
-
-
-  useEffect(() => {
-    if (tab === "documents") {
-      setDocsLoading(true);
-      getClientDocuments(id)
-        .then(setDocuments)
-        .catch(e => setDocsError(e.message || "Failed to load documents"))
-        .finally(() => setDocsLoading(false));
-    }
-  }, [tab, id]);
-
-  useEffect(() => {
-    if (tab === "vouchers") {
-      setVouchersLoading(true);
-      getClientVouchers(id)
-        .then(setVouchers)
-        .catch(e => setVouchersError(e.message || "Failed to load vouchers"))
-        .finally(() => setVouchersLoading(false));
-    }
-  }, [tab, id]);
 
   async function handleApprove(vid: string) {
     try {
