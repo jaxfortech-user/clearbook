@@ -456,7 +456,10 @@ async def _post_to_tally_sync(v: Voucher, company: str, host: str, port: int, ed
                     self.tally_direct_mode = False
             client_obj = _TallyClient(host, port, v.client_id)
 
+        import logging as _logging
+        _logging.getLogger("tally_debug").warning("XML_TO_TALLY: %s", xml)
         response_text = await route_tally_xml(client_obj, xml)
+        _logging.getLogger("tally_debug").warning("TALLY_RESPONSE: %s", response_text)
 
         if "LINEERROR" in response_text or "IMPORTERROR" in response_text:
             return {"success": False, "error": response_text}
