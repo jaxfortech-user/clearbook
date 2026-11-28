@@ -728,7 +728,7 @@ function ClientDetailInner() {
                   {tallyTesting && <Loader2 size={12} style={{ animation: "spin 1s linear infinite" }} />}
                   {tallyTesting ? "Testing…" : "Test Connection"}
                 </button>
-                <button onClick={handlePushMasters} disabled={mastersPushing}
+                <button type="button" onClick={handlePushMasters} disabled={mastersPushing}
                   style={{ height: "32px", padding: "0 14px", background: "none", border: "1px solid #5266eb", borderRadius: "7px", fontSize: "12.5px", color: "#5266eb", cursor: mastersPushing ? "not-allowed" : "pointer", fontFamily: "var(--font-family-sans)", display: "flex", alignItems: "center", gap: "6px" }}
                 >
                   {mastersPushing ? "Syncing..." : "Sync Masters"}
